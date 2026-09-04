@@ -5,6 +5,7 @@ import { validate } from "../middleware/validation.js";
 import { userLoginLimiter } from "../middleware/rateLimiters.js";
 import {
   forgotPassword,
+  googleOAuth,
   login,
   logout,
   logoutAll,
@@ -30,6 +31,7 @@ router.post(
 );
 router.get("/verify-email/:token", verifyEmail);
 router.post("/login", userLoginLimiter, login);
+router.post("/google", userLoginLimiter, googleOAuth);
 router.post("/refresh", refresh);
 router.post("/logout", logout);
 router.post("/logout-all", authenticate, logoutAll);

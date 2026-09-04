@@ -18,6 +18,7 @@ import serviceRoutes from "./routes/serviceRoutes.js";
 import { registerChatSocket } from "./sockets/chatSocket.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { apiLimiter } from "./middleware/rateLimiters.js";
+import { dbHealthCheck } from "./middleware/dbHealthCheck.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -48,6 +49,7 @@ app.use((request, _response, next) => {
   next();
 });
 app.get("/api/health", (_request, response) => response.json({ status: "ok" }));
+app.use(dbHealthCheck);
 app.use("/api/auth", authRoutes);
 app.use("/api/admin/auth", adminAuthRoutes);
 app.use("/api/jobs", jobRoutes);
@@ -70,12 +72,21 @@ if (process.env.NODE_ENV !== "test") {
     cors: { origin: config.frontendOrigins, credentials: true },
   });
   registerChatSocket(io);
+
+  // Start server immediately to handle requests
+  httpServer.listen(config.port, () => {
+    console.log(
+      JSON.stringify({ event: "server_listening", port: config.port }),
+    );
+  });
+
+  // Connect to database in the background
+  let dbConnected = false;
   connectDatabase()
-    .then(() =>
-      httpServer.listen(config.port, () =>
-        console.log(`API listening on ${config.port}`),
-      ),
-    )
+    .then(() => {
+      dbConnected = true;
+      console.log(JSON.stringify({ event: "database_connected" }));
+    })
     .catch((error) => {
       console.error(
         JSON.stringify({
@@ -83,12 +94,27 @@ if (process.env.NODE_ENV !== "test") {
           message: error.message,
         }),
       );
-      process.exitCode = 1;
+      // Exit after attempts exhausted, but keep server running to report health
     });
+
+  // Health check endpoint returns 503 if DB is not ready
+  app.get("/api/health/ready", (_request, response) => {
+    if (!dbConnected) {
+      return response.status(503).json({
+        status: "not_ready",
+        message: "Database connection pending",
+      });
+    }
+    return response.json({ status: "ok", database: "connected" });
+  });
 
   const shutdown = async (signal) => {
     await new Promise((resolve) => httpServer.close(resolve));
-    await mongoose.disconnect();
+    try {
+      await mongoose.disconnect();
+    } catch {
+      // Already disconnected or error
+    }
     console.log(JSON.stringify({ event: "server_stopped", signal }));
     process.exit(0);
   };
