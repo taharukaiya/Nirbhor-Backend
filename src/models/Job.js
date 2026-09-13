@@ -24,7 +24,10 @@ const jobSchema = new mongoose.Schema(
     },
     serviceType: { type: String, trim: true, maxlength: 80 },
     location: {
+      division: { type: String, required: true, trim: true, index: true },
       district: { type: String, required: true, trim: true, index: true },
+      thana: { type: String, required: true, trim: true },
+      road: { type: String, default: "" },
       address: { type: String, required: true, trim: true, maxlength: 300 },
       city: { type: String, trim: true, maxlength: 80 },
     },

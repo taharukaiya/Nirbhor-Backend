@@ -19,13 +19,13 @@ const jobChatSchema = new mongoose.Schema(
     job: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Job",
-      required: true,
+      required: false,
       index: true,
     },
     proposal: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Proposal",
-      required: true,
+      required: false,
       index: true,
     },
     participants: [
@@ -43,6 +43,6 @@ const jobChatSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
-jobChatSchema.index({ job: 1, proposal: 1 }, { unique: true });
+jobChatSchema.index({ participants: 1 });
 jobChatSchema.index({ updatedAt: -1 });
 export const JobChat = mongoose.model("JobChat", jobChatSchema);

@@ -1,6 +1,5 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { OAuth2Client } from "google-auth-library";
 import { User } from "../models/User.js";
 import { config } from "../config.js";
 import { clearUserCookies, setUserCookies } from "../utils/cookies.js";
@@ -16,6 +15,7 @@ import {
   sendVerificationEmail,
 } from "../utils/mailer.js";
 import { verifyNID } from "../services/NIDVerificationService.js";
+import { saveBase64Avatar } from "../utils/imageStorage.js";
 
 const normalizeRole = (role) => {
   const value = String(role ?? "")
@@ -26,6 +26,14 @@ const normalizeRole = (role) => {
     return "SERVICE_PROVIDER";
   if (value === "SERVICE-PROVIDER") return "SERVICE_PROVIDER";
   return value === "SERVICE_PROVIDER" ? "SERVICE_PROVIDER" : "HIRER";
+};
+
+const parseYYYYMMDD = (dateStr) => {
+  if (!dateStr || typeof dateStr !== "string") return null;
+  const match = dateStr.match(/^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/);
+  if (!match) return null;
+  const [, year, month, day] = match;
+  return new Date(`${year}-${month}-${day}T00:00:00Z`);
 };
 
 const publicUser = (user) => ({
@@ -49,9 +57,14 @@ const publicUser = (user) => ({
     skills: user.profile?.skills || [],
     rating: user.profile?.rating ?? 0,
     reviews: user.profile?.reviews ?? 0,
+    hirerRating: user.profile?.hirerRating ?? user.profile?.rating ?? 0,
+    hirerReviews: user.profile?.hirerReviews ?? user.profile?.reviews ?? 0,
+    providerRating: user.profile?.providerRating ?? user.profile?.rating ?? 0,
+    providerReviews: user.profile?.providerReviews ?? user.profile?.reviews ?? 0,
     completedJobs: user.profile?.completedJobs ?? 0,
     hourlyRate: user.profile?.hourlyRate ?? 0,
     availableNow: !!user.profile?.availableNow,
+    workingHours: user.profile?.workingHours || "Flexible",
   },
 });
 
@@ -60,7 +73,7 @@ const passwordRules = (password) =>
 
 export async function register(request, response) {
   try {
-    const { name, email, password } = request.body;
+    const { name, email, password, nidNumber, dateOfBirth } = request.body;
     const role = normalizeRole(request.body.role);
 
     if (
@@ -73,7 +86,70 @@ export async function register(request, response) {
         success: false,
         error: {
           code: "INVALID_INPUT",
-          message: "Invalid registration details",
+          message: "Invalid registration details. Name, valid email, password (min 8 chars), and role are required.",
+        },
+      });
+    }
+
+    if (!nidNumber || !dateOfBirth) {
+      return response.status(400).json({
+        success: false,
+        error: {
+          code: "MISSING_NID_DETAILS",
+          message: "National ID (NID) number and Date of Birth are mandatory for account creation.",
+        },
+      });
+    }
+
+    const cleanNid = String(nidNumber || "").trim().replace(/[-\s]/g, "");
+    if (!/^\d{10,17}$/.test(cleanNid)) {
+      return response.status(400).json({
+        success: false,
+        error: {
+          code: "INVALID_NID_FORMAT",
+          message: "NID number must be between 10 and 17 numeric digits.",
+        },
+      });
+    }
+
+    const parsedDob = parseYYYYMMDD(dateOfBirth);
+    if (!parsedDob) {
+      return response.status(422).json({
+        success: false,
+        error: {
+          code: "INVALID_DOB_FORMAT",
+          message: "Please select a valid Date of Birth.",
+        },
+      });
+    }
+
+    // Explicit pre-save check to ensure NID uniqueness
+    const nidExists = await User.exists({ nidNumber: cleanNid });
+    if (nidExists) {
+      return response.status(409).json({
+        success: false,
+        error: {
+          code: "NID_EXISTS",
+          message: "An account with this NID already exists.",
+        },
+      });
+    }
+
+    // Mandatory NID verification before account creation
+    const nidResult = await verifyNID({
+      nidNumber: cleanNid,
+      dateOfBirth: parsedDob,
+      name: String(name).trim(),
+    });
+
+    if (!nidResult.verified) {
+      return response.status(422).json({
+        success: false,
+        error: {
+          code: "NID_VERIFICATION_FAILED",
+          message:
+            nidResult.reason ||
+            "NID verification failed. Please ensure your NID number, Full Name, and Date of Birth match official records.",
         },
       });
     }
@@ -95,6 +171,17 @@ export async function register(request, response) {
       role,
       activeMode: role,
       availableModes: ["HIRER", "SERVICE_PROVIDER"],
+      nidNumber: cleanNid,
+      dateOfBirth: parsedDob,
+      nidVerified: true,
+      nidSubmittedAt: new Date(),
+      profile: {
+        category: "General Service",
+        hourlyRate: 0,
+        availableNow: true,
+        skills: [],
+        bio: "",
+      },
     });
 
     await sendVerificationEmail(
@@ -119,6 +206,27 @@ export async function register(request, response) {
         message: error.message,
       }),
     );
+    if (error.code === 11000 || error.message?.includes("E11000")) {
+      const isNid =
+        error.message?.includes("nidNumber") ||
+        JSON.stringify(error.keyValue || {}).includes("nidNumber");
+      if (isNid) {
+        return response.status(409).json({
+          success: false,
+          error: {
+            code: "NID_EXISTS",
+            message: "An account with this NID already exists.",
+          },
+        });
+      }
+      return response.status(409).json({
+        success: false,
+        error: {
+          code: "EMAIL_EXISTS",
+          message: "An account with this email already exists.",
+        },
+      });
+    }
     return response.status(500).json({
       success: false,
       error: {
@@ -275,22 +383,85 @@ export async function logoutAll(request, response) {
 }
 
 export async function session(request, response) {
+  if (!request.user) {
+    return response.json({ user: null });
+  }
   response.json({ user: publicUser(request.user) });
 }
 
 export async function switchMode(request, response) {
-  const { mode } = request.body;
-  const normalizedMode = normalizeRole(mode);
-  if (
-    !["HIRER", "SERVICE_PROVIDER"].includes(normalizedMode) ||
-    !request.user.availableModes.includes(normalizedMode)
-  )
-    return response
-      .status(400)
-      .json({ error: "Mode is not available for this account" });
-  request.user.activeMode = normalizedMode;
-  await request.user.save();
-  response.json({ user: publicUser(request.user) });
+  try {
+    const { mode, activeMode } = request.body;
+    const targetMode = mode || activeMode;
+    const normalizedMode = normalizeRole(targetMode);
+
+    if (!["HIRER", "SERVICE_PROVIDER"].includes(normalizedMode)) {
+      return response.status(400).json({
+        success: false,
+        error: { code: "INVALID_MODE", message: "Invalid role mode specified" },
+      });
+    }
+
+    // Automatically ensure availableModes includes both roles for smooth switching
+    if (
+      !Array.isArray(request.user.availableModes) ||
+      request.user.availableModes.length < 2
+    ) {
+      request.user.availableModes = ["HIRER", "SERVICE_PROVIDER"];
+    }
+
+    request.user.activeMode = normalizedMode;
+    await request.user.save();
+
+    return response.json({
+      success: true,
+      user: publicUser(request.user),
+    });
+  } catch (error) {
+    console.error("switchMode error:", error);
+    return response.status(500).json({
+      success: false,
+      error: { code: "SWITCH_MODE_FAILED", message: "Failed to switch mode" },
+    });
+  }
+}
+
+export async function uploadAvatar(request, response) {
+  try {
+    const { avatar } = request.body;
+    if (!avatar || typeof avatar !== "string") {
+      return response.status(400).json({
+        success: false,
+        error: { code: "INVALID_IMAGE", message: "Image data is required" },
+      });
+    }
+
+    const savedPath = saveBase64Avatar(avatar, request.user.id);
+    if (!savedPath) {
+      return response.status(400).json({
+        success: false,
+        error: { code: "UPLOAD_FAILED", message: "Failed to process image file" },
+      });
+    }
+
+    request.user.avatar = savedPath;
+    await request.user.save();
+
+    return response.json({
+      success: true,
+      avatar: savedPath,
+      user: publicUser(request.user),
+    });
+  } catch (error) {
+    console.error("uploadAvatar error:", error);
+    return response.status(500).json({
+      success: false,
+      error: {
+        code: "UPLOAD_FAILED",
+        message: "Failed to upload profile picture",
+      },
+    });
+  }
 }
 
 export async function updateProfile(request, response) {
@@ -307,6 +478,8 @@ export async function updateProfile(request, response) {
       bio,
       skills,
       activeMode,
+      workingHours,
+      availableNow,
     } = request.body;
     const user = request.user;
 
@@ -333,7 +506,7 @@ export async function updateProfile(request, response) {
       });
     }
 
-    if (typeof password === "string" && !passwordRules(password)) {
+    if (typeof password === "string" && password.trim() && !passwordRules(password)) {
       return response.status(400).json({
         success: false,
         error: {
@@ -367,12 +540,28 @@ export async function updateProfile(request, response) {
 
     if (typeof phone === "string") user.phone = phone.trim();
     if (typeof location === "string") user.location = location.trim();
-    if (typeof avatar === "string") user.avatar = avatar.trim();
+    
+    // Handle persistent avatar storage if base64 or path provided
+    if (typeof avatar === "string" && avatar.trim()) {
+      const trimmedAvatar = avatar.trim();
+      if (trimmedAvatar.startsWith("data:image/")) {
+        const savedPath = saveBase64Avatar(trimmedAvatar, user.id);
+        if (savedPath) user.avatar = savedPath;
+      } else {
+        user.avatar = trimmedAvatar;
+      }
+    }
 
-    if (typeof activeMode === "string") {
+    if (typeof activeMode === "string" && activeMode.trim()) {
       const normalizedMode = normalizeRole(activeMode);
       if (["HIRER", "SERVICE_PROVIDER"].includes(normalizedMode)) {
         user.activeMode = normalizedMode;
+        if (
+          !Array.isArray(user.availableModes) ||
+          user.availableModes.length < 2
+        ) {
+          user.availableModes = ["HIRER", "SERVICE_PROVIDER"];
+        }
       }
     }
 
@@ -381,24 +570,34 @@ export async function updateProfile(request, response) {
     if (typeof hourlyRate !== "undefined")
       profile.hourlyRate = Number(hourlyRate) || 0;
     if (typeof bio === "string") profile.bio = bio.trim();
+    if (typeof workingHours === "string")
+      profile.workingHours = workingHours.trim();
+    if (typeof availableNow !== "undefined")
+      profile.availableNow = Boolean(availableNow);
     if (typeof skills !== "undefined") {
       profile.skills = Array.isArray(skills)
         ? skills
             .filter(Boolean)
             .map((skill) => String(skill).trim())
             .slice(0, 12)
-        : [];
+        : typeof skills === "string"
+          ? skills
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
+              .slice(0, 12)
+          : [];
     }
     if (typeof location === "string") profile.district = location.trim();
     user.profile = profile;
 
-    if (typeof password === "string" && passwordRules(password)) {
+    if (typeof password === "string" && password.trim() && passwordRules(password)) {
       user.passwordHash = await bcrypt.hash(password, 12);
       user.refreshTokens = [];
     }
 
     await user.save();
-    return response.json({ user: publicUser(user) });
+    return response.json({ success: true, user: publicUser(user) });
   } catch (error) {
     console.error(
       JSON.stringify({
@@ -417,20 +616,74 @@ export async function updateProfile(request, response) {
 }
 
 export async function submitNid(request, response) {
-  const { nidNumber, dateOfBirth } = request.body;
-  const result = await verifyNID({
-    nidNumber,
-    dateOfBirth,
-    name: request.user.name,
-  });
-  request.user.nidNumber = String(nidNumber || "").trim();
-  request.user.dateOfBirth = dateOfBirth;
-  request.user.nidSubmittedAt = new Date();
-  request.user.nidVerified = result.verified;
-  await request.user.save();
-  response
-    .status(result.verified ? 200 : 422)
-    .json({ verified: result.verified, reason: result.reason });
+  try {
+    const { nidNumber, dateOfBirth } = request.body;
+    const cleanNid = String(nidNumber || "").trim().replace(/[-\s]/g, "");
+
+    if (!cleanNid || !/^\d{10,17}$/.test(cleanNid)) {
+      return response.status(400).json({
+        success: false,
+        error: {
+          code: "INVALID_NID_FORMAT",
+          message: "NID number must be between 10 and 17 numeric digits.",
+        },
+      });
+    }
+
+    const parsedDob = parseYYYYMMDD(dateOfBirth);
+    if (!parsedDob) {
+      return response.status(422).json({
+        success: false,
+        error: {
+          code: "INVALID_DOB_FORMAT",
+          message: "Please select a valid Date of Birth.",
+        },
+      });
+    }
+
+    const duplicate = await User.exists({
+      nidNumber: cleanNid,
+      _id: { $ne: request.user.id },
+    });
+    if (duplicate) {
+      return response.status(409).json({
+        success: false,
+        error: {
+          code: "NID_EXISTS",
+          message: "An account with this NID already exists.",
+        },
+      });
+    }
+
+    const result = await verifyNID({
+      nidNumber: cleanNid,
+      dateOfBirth: parsedDob,
+      name: request.user.name,
+    });
+    request.user.nidNumber = cleanNid;
+    request.user.dateOfBirth = parsedDob;
+    request.user.nidSubmittedAt = new Date();
+    request.user.nidVerified = result.verified;
+    await request.user.save();
+    return response
+      .status(result.verified ? 200 : 422)
+      .json({ verified: result.verified, reason: result.reason, user: publicUser(request.user) });
+  } catch (error) {
+    if (error.code === 11000) {
+      return response.status(409).json({
+        success: false,
+        error: {
+          code: "NID_EXISTS",
+          message: "An account with this NID already exists.",
+        },
+      });
+    }
+    console.error("submitNid error:", error);
+    return response.status(500).json({
+      success: false,
+      error: { code: "NID_VERIFICATION_FAILED", message: "Failed to verify NID details." },
+    });
+  }
 }
 
 export async function forgotPassword(request, response) {
@@ -466,94 +719,44 @@ export async function resetPassword(request, response) {
   }
 }
 
-/**
- * Google OAuth handler - Sign In or Register
- * Verifies Google ID token and creates/authenticates user
- */
-export async function googleOAuth(request, response) {
+export async function changePassword(request, response) {
   try {
-    const { idToken, defaultRole } = request.body;
+    const { currentPassword, newPassword } = request.body;
 
-    if (!idToken) {
+    if (!currentPassword || !newPassword) {
       return response.status(400).json({
         success: false,
-        error: {
-          code: "MISSING_TOKEN",
-          message: "ID token is required",
-        },
+        error: { code: "MISSING_FIELDS", message: "Current password and new password are required" },
       });
     }
 
-    // Verify Google token
-    const googleClient = new OAuth2Client(config.googleClientId);
-    let ticket;
-    try {
-      ticket = await googleClient.verifyIdToken({
-        idToken,
-        audience: config.googleClientId,
+    if (!passwordRules(newPassword)) {
+      return response.status(400).json({
+        success: false,
+        error: { code: "WEAK_PASSWORD", message: "New password must be at least 8 characters long" },
       });
-    } catch (err) {
+    }
+
+    // Re-fetch user with passwordHash for comparison
+    const user = await User.findById(request.user.id).select("+passwordHash");
+    if (!user) {
+      return response.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "User not found" } });
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!isMatch) {
       return response.status(401).json({
         success: false,
-        error: {
-          code: "INVALID_TOKEN",
-          message: "Failed to verify Google token",
-        },
+        error: { code: "WRONG_PASSWORD", message: "Current password is incorrect" },
       });
     }
 
-    const payload = ticket.getPayload();
-    const { email, name, picture } = payload;
+    user.passwordHash = await bcrypt.hash(newPassword, 12);
+    // Invalidate all refresh tokens so other sessions are forced to re-authenticate
+    user.refreshTokens = [];
+    await user.save();
 
-    if (!email) {
-      return response.status(400).json({
-        success: false,
-        error: {
-          code: "NO_EMAIL",
-          message: "Google account must have an email",
-        },
-      });
-    }
-
-    const normalizedEmail = email.trim().toLowerCase();
-    let user = await User.findOne({ email: normalizedEmail });
-
-    // If user doesn't exist, create new account
-    if (!user) {
-      const role = normalizeRole(defaultRole) || "HIRER";
-      user = await User.create({
-        name: name || "User",
-        email: normalizedEmail,
-        avatar: picture || "",
-        role,
-        activeMode: role,
-        availableModes: ["HIRER", "SERVICE_PROVIDER"],
-        emailVerified: true, // Google emails are verified
-        passwordHash: await bcrypt.hash(
-          // Generate a random password since OAuth users don't use passwords
-          Math.random().toString(36).slice(2),
-          12,
-        ),
-      });
-    }
-
-    // Check if user is suspended
-    if (user.suspended) {
-      return response.status(403).json({
-        success: false,
-        error: {
-          code: "ACCOUNT_SUSPENDED",
-          message: "This account has been suspended",
-        },
-      });
-    }
-
-    // Update avatar if Google provides one and user doesn't have one
-    if (picture && !user.avatar) {
-      user.avatar = picture;
-    }
-
-    // Issue tokens
+    // Issue fresh tokens for the current session
     const tokens = issueUserTokens(user);
     user.refreshTokens.push({
       tokenId: tokens.tokenId,
@@ -561,25 +764,53 @@ export async function googleOAuth(request, response) {
       expiresAt: tokens.expiresAt,
     });
     await user.save();
-
     setUserCookies(response, tokens.accessToken, tokens.refreshToken);
-    return response.json({
-      user: publicUser(user),
-      isNewAccount: false, // This will be detected on client if needed
-    });
+
+    return response.json({ success: true, message: "Password updated successfully" });
   } catch (error) {
-    console.error(
-      JSON.stringify({
-        event: "google_oauth_error",
-        message: error.message,
-      }),
-    );
+    console.error("changePassword error:", error);
     return response.status(500).json({
       success: false,
-      error: {
-        code: "OAUTH_FAILED",
-        message: "Google authentication failed. Please try again.",
-      },
+      error: { code: "UPDATE_FAILED", message: "Failed to update password. Please try again." },
     });
   }
 }
+
+export async function getPublicUser(request, response) {
+  try {
+    const { userId } = request.params;
+    const user = await User.findById(userId).select(
+      "name avatar nidVerified profile location createdAt role activeMode",
+    );
+    if (!user) {
+      return response.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "User not found" } });
+    }
+
+    return response.json({
+      success: true,
+      user: {
+        id: user._id.toString(),
+        name: user.name,
+        avatar: user.avatar || "",
+        nidVerified: !!user.nidVerified,
+        memberSince: user.createdAt,
+        location: user.location || user.profile?.district || "",
+        activeMode: user.activeMode || user.role,
+        profile: {
+          bio: user.profile?.bio || "",
+          category: user.profile?.category || "",
+          skills: user.profile?.skills || [],
+          rating: user.profile?.providerRating ?? user.profile?.rating ?? 0,
+          reviews: user.profile?.providerReviews ?? user.profile?.reviews ?? 0,
+          hirerRating: user.profile?.hirerRating ?? 0,
+          hirerReviews: user.profile?.hirerReviews ?? 0,
+          completedJobs: user.profile?.completedJobs ?? 0,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("getPublicUser error:", error);
+    return response.status(500).json({ success: false, error: { code: "SERVER_ERROR", message: "Failed to fetch user profile" } });
+  }
+}
+

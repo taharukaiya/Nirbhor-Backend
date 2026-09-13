@@ -1,11 +1,10 @@
 import { Router } from "express";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, optionalAuthenticate } from "../middleware/auth.js";
 import { body } from "express-validator";
 import { validate } from "../middleware/validation.js";
 import { userLoginLimiter } from "../middleware/rateLimiters.js";
 import {
   forgotPassword,
-  googleOAuth,
   login,
   logout,
   logoutAll,
@@ -17,6 +16,9 @@ import {
   switchMode,
   submitNid,
   updateProfile,
+  uploadAvatar,
+  changePassword,
+  getPublicUser,
 } from "../controllers/authController.js";
 
 const router = Router();
@@ -31,17 +33,16 @@ router.post(
 );
 router.get("/verify-email/:token", verifyEmail);
 router.post("/login", userLoginLimiter, login);
-router.post("/google", userLoginLimiter, googleOAuth);
 router.post("/refresh", refresh);
 router.post("/logout", logout);
 router.post("/logout-all", authenticate, logoutAll);
-router.get("/session", authenticate, session);
+router.get("/session", optionalAuthenticate, session);
+router.post("/avatar", authenticate, uploadAvatar);
 router.patch(
   "/profile",
   authenticate,
   body("name").optional().isString().trim().isLength({ min: 2, max: 100 }),
   body("email").optional().isEmail(),
-  body("password").optional().isLength({ min: 8 }),
   body("hourlyRate").optional().isNumeric(),
   validate,
   updateProfile,
@@ -49,18 +50,26 @@ router.patch(
 router.patch(
   "/mode",
   authenticate,
-  body("mode").isIn(["HIRER", "SERVICE_PROVIDER"]),
-  validate,
   switchMode,
 );
 router.post(
   "/nid",
   authenticate,
   body("nidNumber").isString().notEmpty(),
-  body("dateOfBirth").isISO8601(),
+  body("dateOfBirth").isString().notEmpty(),
   validate,
   submitNid,
 );
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password/:token", resetPassword);
+router.post(
+  "/change-password",
+  authenticate,
+  body("currentPassword").isString().notEmpty(),
+  body("newPassword").isString().isLength({ min: 8 }),
+  validate,
+  changePassword,
+);
+router.get("/users/:userId/public", getPublicUser);
 export default router;
+

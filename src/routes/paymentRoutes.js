@@ -5,6 +5,8 @@ import {
   initiatePayment,
   paymentIpn,
   releasePayment,
+  processJobPayment,
+  payWithWallet,
 } from "../controllers/paymentController.js";
 
 const router = Router();
@@ -21,13 +23,26 @@ router.post(
   asyncHandler(releasePayment),
 );
 router.post("/sslcommerz/ipn", asyncHandler(paymentIpn));
-router.post("/sslcommerz/success", (_request, response) =>
-  response.redirect(process.env.FRONTEND_ORIGIN || "/"),
+router.post("/sslcommerz/success", (request, response) => {
+  const tranId = request.body?.tran_id || "";
+  response.redirect(`${process.env.FRONTEND_ORIGIN || "http://localhost:5173"}/payment/success?tran_id=${tranId}`);
+});
+router.post("/sslcommerz/fail", (request, response) => {
+  response.redirect(`${process.env.FRONTEND_ORIGIN || "http://localhost:5173"}/payment/failed`);
+});
+router.post("/sslcommerz/cancel", (request, response) => {
+  response.redirect(`${process.env.FRONTEND_ORIGIN || "http://localhost:5173"}/payment/failed`);
+});
+router.post(
+  "/:jobId/mock-pay",
+  authenticate,
+  requireVerifiedNID,
+  asyncHandler(processJobPayment),
 );
-router.post("/sslcommerz/fail", (_request, response) =>
-  response.redirect(process.env.FRONTEND_ORIGIN || "/"),
-);
-router.post("/sslcommerz/cancel", (_request, response) =>
-  response.redirect(process.env.FRONTEND_ORIGIN || "/"),
+router.post(
+  "/:jobId/wallet-pay",
+  authenticate,
+  requireVerifiedNID,
+  asyncHandler(payWithWallet),
 );
 export default router;

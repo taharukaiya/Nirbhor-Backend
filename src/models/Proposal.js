@@ -18,7 +18,7 @@ const proposalSchema = new mongoose.Schema(
     message: { type: String, required: true, trim: true, maxlength: 3000 },
     status: {
       type: String,
-      enum: ["PENDING", "ACCEPTED", "REJECTED", "WITHDRAWN"],
+      enum: ["PENDING", "ACCEPTED", "REJECTED", "WITHDRAWN", "CANCELLED"],
       default: "PENDING",
       index: true,
     },

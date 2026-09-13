@@ -6,28 +6,40 @@ const disputeSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Job",
       required: true,
-      unique: true,
-      index: true,
     },
-    openedBy: {
+    reporter: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
-    reason: { type: String, required: true, trim: true, maxlength: 3000 },
+    reportedUser: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    reason: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    description: {
+      type: String,
+      required: true,
+      trim: true,
+    },
     status: {
       type: String,
-      enum: ["OPEN", "UNDER_REVIEW", "RESOLVED", "REJECTED"],
+      enum: ["OPEN", "INVESTIGATING", "RESOLVED", "CLOSED"],
       default: "OPEN",
-      index: true,
     },
-    resolution: { type: String, trim: true, maxlength: 5000 },
-    resolvedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Admin",
-      default: null,
+    resolution: {
+      type: String,
+      trim: true,
     },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+  }
 );
+
 export const Dispute = mongoose.model("Dispute", disputeSchema);

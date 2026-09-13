@@ -8,7 +8,10 @@ import {
   maskContactInfo,
 } from "../utils/contactFilter.js";
 
+let ioInstance = null;
+
 export function registerChatSocket(io) {
+  ioInstance = io;
   io.use((socket, next) => {
     try {
       const payload = jwt.verify(
@@ -29,6 +32,7 @@ export function registerChatSocket(io) {
     }
   });
   io.on("connection", (socket) => {
+    socket.join(`user:${socket.userId}`);
     socket.on("disconnect", (reason) =>
       console.log(
         JSON.stringify({
@@ -84,35 +88,46 @@ export function registerChatSocket(io) {
     });
     socket.on(
       "chat:join",
-      async ({ jobId, proposalId }, acknowledge = () => {}) => {
+      async ({ chatId, jobId, proposalId, targetUserId }, acknowledge = () => {}) => {
         try {
-          const proposal = await Proposal.findOne({
-            _id: proposalId,
-            job: jobId,
-          }).lean();
-          const job = await Job.findById(jobId).lean();
-          if (
-            !proposal ||
-            !job ||
-            ![String(job.hirer), String(proposal.provider)].includes(
-              socket.userId,
-            )
-          )
-            return acknowledge({ error: "Unauthorized chat" });
-          const chat = await JobChat.findOneAndUpdate(
-            { job: jobId, proposal: proposalId },
-            {
-              $setOnInsert: {
-                job: jobId,
-                proposal: proposalId,
-                participants: [job.hirer, proposal.provider],
-              },
-            },
-            { upsert: true, new: true },
-          );
-          socket.join(`chat:${chat.id}`);
-          acknowledge({ chatId: chat.id, archived: chat.isArchived });
-        } catch {
+          let chat = null;
+
+          if (chatId) {
+            chat = await JobChat.findOne({
+              _id: chatId,
+              participants: socket.userId,
+            });
+          } else if (jobId && proposalId) {
+            chat = await JobChat.findOne({ job: jobId, proposal: proposalId });
+            if (!chat) {
+              const proposal = await Proposal.findOne({ _id: proposalId, job: jobId }).lean();
+              const job = await Job.findById(jobId).lean();
+              if (proposal && job && [String(job.hirer), String(proposal.provider)].includes(socket.userId)) {
+                chat = await JobChat.create({
+                  job: jobId,
+                  proposal: proposalId,
+                  participants: [job.hirer, proposal.provider],
+                });
+              }
+            }
+          } else if (targetUserId) {
+            chat = await JobChat.findOne({ participants: { $all: [socket.userId, targetUserId] } });
+            if (!chat) {
+              chat = await JobChat.create({
+                participants: [socket.userId, targetUserId],
+                messages: [],
+              });
+            }
+          }
+
+          if (!chat || !chat.participants.map(p => p.toString()).includes(socket.userId)) {
+            return acknowledge({ error: "Unauthorized or chat not found" });
+          }
+
+          socket.join(`chat:${chat.id || chat._id}`);
+          acknowledge({ chatId: (chat.id || chat._id).toString(), archived: !!chat.isArchived });
+        } catch (err) {
+          console.error("chat:join error:", err);
           acknowledge({ error: "Unable to join chat" });
         }
       },
@@ -143,4 +158,10 @@ export function registerChatSocket(io) {
       },
     );
   });
+}
+
+export function emitNotification(userId, notification) {
+  if (ioInstance) {
+    ioInstance.to(`user:${userId}`).emit("notification:new", notification);
+  }
 }

@@ -32,10 +32,6 @@ export const config = {
   accessSecret: process.env.ACCESS_TOKEN_SECRET,
   refreshSecret: process.env.REFRESH_TOKEN_SECRET,
   emailSecret: process.env.EMAIL_TOKEN_SECRET,
-  googleClientId:
-    process.env.GOOGLE_CLIENT_ID ||
-    "your-google-client-id-here.apps.googleusercontent.com",
-  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
   isProduction: process.env.NODE_ENV === "production",
   apiPublicUrl: process.env.API_PUBLIC_URL || "http://localhost:5000",
 };
