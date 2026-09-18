@@ -43,6 +43,7 @@ router.patch(
   authenticate,
   body("name").optional().isString().trim().isLength({ min: 2, max: 100 }),
   body("email").optional().isEmail(),
+  body("phone").optional().matches(/^\+880\d{10}$/).withMessage("Phone number must start with +880 followed by exactly 10 digits."),
   body("hourlyRate").optional().isNumeric(),
   validate,
   updateProfile,

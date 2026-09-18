@@ -5,7 +5,6 @@ import {
   initiatePayment,
   paymentIpn,
   releasePayment,
-  processJobPayment,
   payWithWallet,
 } from "../controllers/paymentController.js";
 
@@ -23,8 +22,15 @@ router.post(
   asyncHandler(releasePayment),
 );
 router.post("/sslcommerz/ipn", asyncHandler(paymentIpn));
-router.post("/sslcommerz/success", (request, response) => {
+router.post("/sslcommerz/success", async (request, response) => {
   const tranId = request.body?.tran_id || "";
+  const valId = request.body?.val_id || "";
+  try {
+    const { processPaymentFulfillment } = await import("../controllers/paymentController.js");
+    await processPaymentFulfillment(tranId, valId);
+  } catch (err) {
+    console.error("Success URL sync error:", err);
+  }
   response.redirect(`${process.env.FRONTEND_ORIGIN || "http://localhost:5173"}/payment/success?tran_id=${tranId}`);
 });
 router.post("/sslcommerz/fail", (request, response) => {
@@ -33,12 +39,7 @@ router.post("/sslcommerz/fail", (request, response) => {
 router.post("/sslcommerz/cancel", (request, response) => {
   response.redirect(`${process.env.FRONTEND_ORIGIN || "http://localhost:5173"}/payment/failed`);
 });
-router.post(
-  "/:jobId/mock-pay",
-  authenticate,
-  requireVerifiedNID,
-  asyncHandler(processJobPayment),
-);
+
 router.post(
   "/:jobId/wallet-pay",
   authenticate,

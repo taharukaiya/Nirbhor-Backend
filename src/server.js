@@ -23,14 +23,16 @@ import categoryRoutes from "./routes/categoryRoutes.js";
 import disputeRoutes from "./routes/disputeRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
 import proposalRoutes from "./routes/proposalRoutes.js";
+import transactionRoutes from "./routes/transactionRoutes.js";
 import { registerChatSocket } from "./sockets/chatSocket.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import path from "node:path";
 import { apiLimiter } from "./middleware/rateLimiters.js";
 import { dbHealthCheck } from "./middleware/dbHealthCheck.js";
-import { ensureUploadDirExists } from "./utils/imageStorage.js";
+import { ensureUploadDirExists, ensureAudioDirExists } from "./utils/imageStorage.js";
 
 ensureUploadDirExists();
+ensureAudioDirExists();
 
 const app = express();
 app.disable("x-powered-by");
@@ -45,6 +47,7 @@ app.use(
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 app.use(apiLimiter);
 app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 app.use((request, _response, next) => {
   request.requestId = crypto.randomUUID();
@@ -77,6 +80,7 @@ app.use("/api/reviews", reviewRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/disputes", disputeRoutes);
 app.use("/api/wallet", walletRoutes);
+app.use("/api/transactions", transactionRoutes);
 app.use("/api/admin", adminRoutes);
 app.use((request, response) =>
   response.status(404).json({

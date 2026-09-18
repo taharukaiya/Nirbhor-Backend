@@ -9,6 +9,7 @@ import { EscrowPayment } from "../models/EscrowPayment.js";
 import { JobChat } from "../models/JobChat.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { logAuditAction } from "../utils/auditLog.js";
+import { emitNotification } from "../sockets/chatSocket.js";
 
 export async function createAdmin(request, response) {
   const { email, password, name, role } = request.body;
@@ -147,14 +148,24 @@ export async function getSystemStats(request, response) {
   }
 }
 
+
 export async function suspendUser(request, response) {
-  const user = await User.findByIdAndUpdate(
-    request.params.userId,
-    { suspended: true },
-    { new: true },
-  ).select("-passwordHash");
+  const user = await User.findById(request.params.userId);
   if (!user) return response.status(404).json({ error: "User not found" });
-  response.json({ user });
+
+  user.suspended = !user.suspended;
+  await user.save();
+
+  if (user.suspended) {
+    emitNotification(user.id, {
+      type: "system_alert",
+      action: "FORCE_LOGOUT",
+      title: "Account Suspended",
+      message: "Your account has been suspended by an administrator."
+    });
+  }
+
+  response.json({ user: { _id: user._id, suspended: user.suspended } });
 }
 
 export async function reviewNid(request, response) {
@@ -207,7 +218,7 @@ export async function promoteUserToAdmin(request, response) {
         canSuspendUsers: true,
       },
       grantedBy: request.admin?._id,
-      active: true,
+      suspended: false,
     },
     { upsert: true, new: true },
   );
@@ -220,7 +231,7 @@ export async function promoteUserToAdmin(request, response) {
 }
 
 export async function listAdmins(request, response) {
-  const admins = await Admin.find({ active: true })
+  const admins = await Admin.find()
     .select("-passwordHash -refreshTokens")
     .sort({ createdAt: -1 })
     .lean();
@@ -257,13 +268,13 @@ export async function revokeAdmin(request, response) {
     });
   }
 
-  adminToRevoke.active = false;
+  adminToRevoke.suspended = !adminToRevoke.suspended;
   await adminToRevoke.save();
 
   return response.json({
     success: true,
     data: { admin: adminToRevoke },
-    message: "Admin status revoked",
+    message: adminToRevoke.suspended ? "Admin account suspended" : "Admin account reinstated",
   });
 }
 
@@ -318,14 +329,92 @@ export async function deleteCategory(request, response) {
 }
 
 export async function listDisputes(request, response) {
-  const disputes = await Dispute.find()
-    .populate("job", "title category status budget hirer")
-    .populate("openedBy", "name email role")
-    .populate("resolvedBy", "name email")
-    .sort({ createdAt: -1 })
-    .lean();
+  try {
+    const disputes = await Dispute.find()
+      .populate("job", "title category status budget hirer")
+      .populate("reporter", "name email role")
+      .populate("reportedUser", "name email role")
+      .populate("resolvedBy", "name email")
+      .sort({ createdAt: -1 })
+      .lean();
 
-  return response.json({ success: true, disputes });
+    return response.json({
+      success: true,
+      disputes: disputes.map((d) => ({
+        ...d,
+        openedBy: d.reporter,
+      })),
+    });
+  } catch (error) {
+    console.error("listDisputes error:", error);
+    return response.status(500).json({
+      success: false,
+      error: { code: "FETCH_FAILED", message: "Failed to retrieve disputes." },
+    });
+  }
+}
+
+export async function getDisputeDetails(request, response) {
+  try {
+    const { disputeId } = request.params;
+    const dispute = await Dispute.findById(disputeId)
+      .populate("job")
+      .populate("reporter", "name email phone avatar role")
+      .populate("reportedUser", "name email phone avatar role")
+      .populate("resolvedBy", "name email")
+      .lean();
+
+    if (!dispute) {
+      return response.status(404).json({
+        success: false,
+        error: { code: "NOT_FOUND", message: "Dispute record not found." },
+      });
+    }
+
+    const job = dispute.job || {};
+    const payment = await EscrowPayment.findOne({ job: job._id }).lean();
+    const chatLogs = await JobChat.findOne({ job: job._id })
+      .populate("messages.sender", "name email avatar")
+      .lean();
+
+    return response.json({
+      success: true,
+      dispute: {
+        id: dispute._id.toString(),
+        reason: dispute.reason,
+        status: dispute.status,
+        resolution: dispute.resolution || "",
+        createdAt: dispute.createdAt,
+        openedBy: dispute.reporter,
+        reportedUser: dispute.reportedUser,
+        resolvedBy: dispute.resolvedBy,
+        job: {
+          id: job._id?.toString(),
+          title: job.title,
+          description: job.description,
+          category: job.category,
+          budget: job.budget,
+          status: job.status,
+        },
+        payment: payment
+          ? {
+              id: payment._id.toString(),
+              amount: payment.amount,
+              platformFee: payment.platformFee,
+              providerNetPayout: payment.providerNetPayout,
+              status: payment.status,
+            }
+          : null,
+        chatLogs: chatLogs?.messages || [],
+      },
+    });
+  } catch (error) {
+    console.error("getDisputeDetails error:", error);
+    return response.status(500).json({
+      success: false,
+      error: { code: "FETCH_FAILED", message: "Failed to retrieve dispute details." },
+    });
+  }
 }
 
 export async function resolveDispute(request, response) {
@@ -471,67 +560,6 @@ export async function getPendingVerifications(request, response) {
   }
 }
 
-export async function getDisputeDetails(request, response) {
-  try {
-    const { disputeId } = request.params;
-    const dispute = await Dispute.findById(disputeId)
-      .populate("job")
-      .populate("openedBy", "name email phone avatar role")
-      .populate("resolvedBy", "name email")
-      .lean();
-
-    if (!dispute) {
-      return response.status(404).json({
-        success: false,
-        error: { code: "NOT_FOUND", message: "Dispute record not found." },
-      });
-    }
-
-    const job = dispute.job || {};
-    const payment = await EscrowPayment.findOne({ job: job._id }).lean();
-    const chatLogs = await JobChat.findOne({ job: job._id })
-      .populate("messages.sender", "name email avatar")
-      .lean();
-
-    return response.json({
-      success: true,
-      dispute: {
-        id: dispute._id.toString(),
-        reason: dispute.reason,
-        status: dispute.status,
-        resolution: dispute.resolution || "",
-        createdAt: dispute.createdAt,
-        openedBy: dispute.openedBy,
-        resolvedBy: dispute.resolvedBy,
-        job: {
-          id: job._id?.toString(),
-          title: job.title,
-          description: job.description,
-          category: job.category,
-          budget: job.budget,
-          status: job.status,
-        },
-        payment: payment
-          ? {
-              id: payment._id.toString(),
-              amount: payment.amount,
-              platformFee: payment.platformFee,
-              providerNetPayout: payment.providerNetPayout,
-              status: payment.status,
-            }
-          : null,
-        chatLogs: chatLogs?.messages || [],
-      },
-    });
-  } catch (error) {
-    console.error("getDisputeDetails error:", error);
-    return response.status(500).json({
-      success: false,
-      error: { code: "FETCH_FAILED", message: "Failed to retrieve dispute details." },
-    });
-  }
-}
-
 export async function updateAdminPermissions(request, response) {
   try {
     const { adminId } = request.params;
@@ -583,6 +611,95 @@ export async function updateAdminPermissions(request, response) {
     return response.status(500).json({
       success: false,
       error: { code: "UPDATE_FAILED", message: "Failed to update admin permissions." },
+    });
+  }
+}
+
+export async function getFinancialReports(request, response) {
+  try {
+    const { period = "monthly", year } = request.query;
+    const targetYear = Number(year) || new Date().getFullYear();
+
+    const startDate = new Date(`${targetYear}-01-01T00:00:00.000Z`);
+    const endDate = new Date(`${targetYear}-12-31T23:59:59.999Z`);
+
+    // Group format depends on period
+    const groupId =
+      period === "daily"
+        ? { year: { $year: "$createdAt" }, month: { $month: "$createdAt" }, day: { $dayOfMonth: "$createdAt" } }
+        : period === "weekly"
+        ? { year: { $year: "$createdAt" }, week: { $week: "$createdAt" } }
+        : { year: { $year: "$createdAt" }, month: { $month: "$createdAt" } };
+
+    const pipeline = [
+      {
+        $match: {
+          status: { $in: ["HELD_IN_ESCROW", "RELEASED"] },
+          createdAt: { $gte: startDate, $lte: endDate },
+        },
+      },
+      {
+        $group: {
+          _id: groupId,
+          grossVolume: { $sum: "$amount" },
+          platformFee: { $sum: "$platformFee" },
+          providerPayout: { $sum: "$providerNetPayout" },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { "_id.year": 1, "_id.month": 1, "_id.day": 1, "_id.week": 1 } },
+    ];
+
+    const aggregated = await EscrowPayment.aggregate(pipeline);
+
+    // Overall totals for selected year
+    const totals = await EscrowPayment.aggregate([
+      {
+        $match: {
+          status: { $in: ["HELD_IN_ESCROW", "RELEASED"] },
+          createdAt: { $gte: startDate, $lte: endDate },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalGross: { $sum: "$amount" },
+          totalFee: { $sum: "$platformFee" },
+          totalPayout: { $sum: "$providerNetPayout" },
+          totalTransactions: { $sum: 1 },
+        },
+      },
+    ]);
+
+    // All-time totals
+    const allTime = await EscrowPayment.aggregate([
+      { $match: { status: { $in: ["HELD_IN_ESCROW", "RELEASED"] } } },
+      {
+        $group: {
+          _id: null,
+          totalGross: { $sum: "$amount" },
+          totalFee: { $sum: "$platformFee" },
+          totalPayout: { $sum: "$providerNetPayout" },
+          totalTransactions: { $sum: 1 },
+        },
+      },
+    ]);
+
+    return response.json({
+      success: true,
+      data: {
+        period,
+        year: targetYear,
+        series: aggregated,
+        yearTotals: totals[0] || { totalGross: 0, totalFee: 0, totalPayout: 0, totalTransactions: 0 },
+        allTimeTotals: allTime[0] || { totalGross: 0, totalFee: 0, totalPayout: 0, totalTransactions: 0 },
+      },
+    });
+  } catch (error) {
+    console.error("getFinancialReports error:", error);
+    return response.status(500).json({
+      success: false,
+      error: { code: "REPORT_FAILED", message: "Failed to generate financial reports" },
     });
   }
 }

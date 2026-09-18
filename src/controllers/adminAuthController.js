@@ -146,3 +146,44 @@ export async function logoutAdmin(request, response) {
   clearAdminCookies(response);
   response.status(204).send();
 }
+
+export async function changeAdminPassword(request, response) {
+  try {
+    const raw = request.cookies.admin_access_token || "";
+    let payload;
+    try {
+      payload = jwt.verify(raw, config.accessSecret, { algorithms: ["HS256"] });
+    } catch {
+      return response.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { currentPassword, newPassword } = request.body || {};
+    if (!currentPassword || !newPassword) {
+      return response.status(400).json({ error: "currentPassword and newPassword are required" });
+    }
+    if (String(newPassword).length < 8) {
+      return response.status(400).json({ error: "New password must be at least 8 characters" });
+    }
+
+    const admin = await Admin.findById(payload.userId).select("+passwordHash");
+    if (!admin || admin.suspended) {
+      return response.status(401).json({ error: "Unauthorized" });
+    }
+
+    const matches = await bcrypt.compare(String(currentPassword), admin.passwordHash);
+    if (!matches) {
+      return response.status(400).json({ error: "Current password is incorrect" });
+    }
+
+    admin.passwordHash = await bcrypt.hash(String(newPassword), 12);
+    // Invalidate all refresh tokens to force re-login on other devices
+    admin.refreshTokens = [];
+    await admin.save();
+
+    clearAdminCookies(response);
+    return response.json({ success: true, message: "Password changed successfully. Please log in again." });
+  } catch (err) {
+    console.error("changeAdminPassword error:", err);
+    return response.status(500).json({ error: "Failed to change password" });
+  }
+}

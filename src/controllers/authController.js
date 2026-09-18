@@ -272,12 +272,22 @@ export async function login(request, response) {
       "+passwordHash",
     );
 
-    if (!user || user.suspended) {
+    if (!user) {
       return response.status(401).json({
         success: false,
         error: {
           code: "AUTH_FAILED",
           message: "Invalid email or password",
+        },
+      });
+    }
+
+    if (user.suspended) {
+      return response.status(403).json({
+        success: false,
+        error: {
+          code: "ACCOUNT_SUSPENDED",
+          message: "Your account has been suspended by an administrator.",
         },
       });
     }
@@ -516,7 +526,15 @@ export async function updateProfile(request, response) {
       });
     }
 
-    if (typeof name === "string" && name.trim()) user.name = name.trim();
+    if (typeof name === "string" && name.trim()) {
+      if (user.nidVerified) {
+        // Silently ignore or we could throw an error. The requirements say:
+        // "Ensure the user update API endpoint rejects or ignores attempts to modify the name field"
+        // Let's ignore it to prevent crashing if the frontend sends it anyway.
+      } else {
+        user.name = name.trim();
+      }
+    }
     if (typeof email === "string" && email.trim()) {
       const normalizedEmail = email.trim().toLowerCase();
       if (normalizedEmail !== user.email) {
@@ -539,9 +557,18 @@ export async function updateProfile(request, response) {
     }
 
     if (typeof phone === "string") user.phone = phone.trim();
-    if (typeof location === "string") user.location = location.trim();
+    if (location && typeof location === "object") {
+      if (!user.location) user.location = {};
+      if (typeof location.division === "string") user.location.division = location.division.trim();
+      if (typeof location.district === "string") user.location.district = location.district.trim();
+      if (typeof location.thana === "string") user.location.thana = location.thana.trim();
+      if (typeof location.road === "string") user.location.road = location.road.trim();
+      if (typeof location.fullAddress === "string") user.location.fullAddress = location.fullAddress.trim();
+    } else if (typeof location === "string") {
+      if (!user.location) user.location = {};
+      user.location.fullAddress = location.trim();
+    }
     
-    // Handle persistent avatar storage if base64 or path provided
     if (typeof avatar === "string" && avatar.trim()) {
       const trimmedAvatar = avatar.trim();
       if (trimmedAvatar.startsWith("data:image/")) {
@@ -570,8 +597,20 @@ export async function updateProfile(request, response) {
     if (typeof hourlyRate !== "undefined")
       profile.hourlyRate = Number(hourlyRate) || 0;
     if (typeof bio === "string") profile.bio = bio.trim();
-    if (typeof workingHours === "string")
-      profile.workingHours = workingHours.trim();
+    if (typeof workingHours === "string") {
+      const trimmed = workingHours.trim();
+      const workingHoursRegex = /^(0[1-9]|1[0-2]):[0-5][0-9]\s*(AM|PM)\s*-\s*(0[1-9]|1[0-2]):[0-5][0-9]\s*(AM|PM)$/i;
+      if (trimmed && !workingHoursRegex.test(trimmed)) {
+        return response.status(400).json({
+          success: false,
+          error: {
+            code: "INVALID_WORKING_HOURS",
+            message: "Working hours must be in the format 'HH:MM AM/PM - HH:MM AM/PM'",
+          },
+        });
+      }
+      profile.workingHours = trimmed;
+    }
     if (typeof availableNow !== "undefined")
       profile.availableNow = Boolean(availableNow);
     if (typeof skills !== "undefined") {

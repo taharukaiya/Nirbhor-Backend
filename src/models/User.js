@@ -17,6 +17,7 @@ const userSchema = new mongoose.Schema(
       unique: true,
       lowercase: true,
       trim: true,
+      match: [/^\S+@\S+\.\S+$/, "Please use a valid email address"],
     },
     passwordHash: { type: String, required: true, select: false },
     name: { type: String, required: true, trim: true },
@@ -47,7 +48,17 @@ const userSchema = new mongoose.Schema(
     },
     dateOfBirth: { type: Date, select: false },
     nidSubmittedAt: { type: Date, default: null },
-    phone: { type: String, trim: true, maxlength: 32, default: "" },
+    phone: { 
+      type: String, 
+      trim: true, 
+      default: "",
+      validate: {
+        validator: function(v) {
+          return v === "" || /^\+880\d{10}$/.test(v);
+        },
+        message: props => `${props.value} is not a valid phone number. It must start with +880 and contain 10 subsequent digits.`
+      }
+    },
     location: {
       division: { type: String, default: "" },
       district: { type: String, default: "" },

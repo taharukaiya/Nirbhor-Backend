@@ -1,4 +1,5 @@
 import { Proposal } from "../models/Proposal.js";
+import { Review } from "../models/Review.js";
 
 export async function getProviderProposals(request, response) {
   try {
@@ -14,7 +15,11 @@ export async function getProviderProposals(request, response) {
     }
 
     const proposals = await Proposal.find({ provider: request.user.id })
-      .populate("job", "title description category location budget status deadline createdAt")
+      .populate({
+        path: "job",
+        select: "title description category location budget status deadline createdAt hirer",
+        populate: { path: "hirer", select: "name avatar _id" },
+      })
       .sort({ createdAt: -1 })
       .lean();
 
@@ -22,6 +27,10 @@ export async function getProviderProposals(request, response) {
     let pendingCount = 0;
     let rejectedCount = 0;
     let completedCount = 0;
+
+    const jobIds = proposals.map(p => p.job?._id).filter(Boolean);
+    const reviews = await Review.find({ job: { $in: jobIds }, reviewer: request.user.id }).select("job").lean();
+    const reviewedJobIds = new Set(reviews.map(r => r.job.toString()));
 
     const formattedProposals = proposals.map((p) => {
       if (p.status === "ACCEPTED") acceptedCount++;
@@ -36,6 +45,7 @@ export async function getProviderProposals(request, response) {
         amount: p.amount,
         message: p.message,
         appliedAt: p.createdAt,
+        hasReviewed: p.job ? reviewedJobIds.has(p.job._id.toString()) : false,
       };
     });
 

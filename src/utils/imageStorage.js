@@ -53,3 +53,51 @@ export function saveBase64Avatar(base64Data, userId) {
     return null;
   }
 }
+
+const AUDIO_DIR = path.join(process.cwd(), "uploads", "audio");
+
+/**
+ * Ensures that the audio directory exists.
+ */
+export function ensureAudioDirExists() {
+  if (!fs.existsSync(AUDIO_DIR)) {
+    fs.mkdirSync(AUDIO_DIR, { recursive: true });
+  }
+}
+
+/**
+ * Saves base64 audio data to the audio directory on disk.
+ * @param {string} base64Data Data URL or base64 string
+ * @param {string} userId User ID prefix
+ * @returns {string|null} Relative static URL path
+ */
+export function saveBase64Audio(base64Data, userId) {
+  if (!base64Data || typeof base64Data !== "string") return null;
+
+  try {
+    ensureAudioDirExists();
+    
+    const parts = base64Data.split(",");
+    let extension = "webm";
+    let buffer;
+
+    if (parts.length === 2) {
+      const match = parts[0].match(/data:audio\/([^;]+)/);
+      if (match) {
+        extension = match[1].split(';')[0];
+      }
+      buffer = Buffer.from(parts[1], "base64");
+    } else {
+      buffer = Buffer.from(base64Data, "base64");
+    }
+
+    const filename = `audio-${userId || "user"}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.${extension}`;
+    const filePath = path.join(AUDIO_DIR, filename);
+    
+    fs.writeFileSync(filePath, buffer);
+    return `/uploads/audio/${filename}`;
+  } catch (error) {
+    console.error("Failed to save audio to disk:", error);
+    return null;
+  }
+}

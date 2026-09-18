@@ -4,6 +4,7 @@ import { Proposal } from "../models/Proposal.js";
 import { JobChat } from "../models/JobChat.js";
 import { User } from "../models/User.js";
 import { Notification } from "../models/Notification.js";
+import { Review } from "../models/Review.js";
 import { emitNotification } from "../sockets/chatSocket.js";
 import { parseAmount } from "../utils/numberUtils.js";
 
@@ -280,8 +281,24 @@ export async function submitProposal(request, response) {
       .json({ error: "Service Provider mode required" });
   const job = await Job.findOne({ _id: request.params.jobId, status: "OPEN" });
   if (!job) return response.status(404).json({ error: "Open job not found" });
+  const amount = parseAmount(request.body.amount || 0);
+
+  if (
+    amount < (job.budget?.min || 0) ||
+    amount > (job.budget?.max || Infinity)
+  ) {
+    return response.status(400).json({
+      success: false,
+      error: {
+        code: "INVALID_AMOUNT",
+        message: `Your offer must be between ৳${job.budget?.min || 0} and ৳${job.budget?.max || 0}.`,
+      },
+    });
+  }
+
   const proposal = await Proposal.create({
     ...request.body,
+    amount,
     job: job.id,
     provider: request.user.id,
   });
@@ -292,7 +309,7 @@ export async function submitProposal(request, response) {
     type: "NEW_PROPOSAL",
     title: "New Proposal",
     message: `A provider has submitted a proposal for your job: ${job.title}`,
-    link: `/jobs/${job.id}`,
+    link: `/hirer/jobs/${job.id}/applicants`,
   });
   emitNotification(job.hirer.toString(), notif);
 
@@ -342,6 +359,9 @@ export async function getHirerJobs(request, response) {
       { $group: { _id: "$job", count: { $sum: 1 } } },
     ]);
 
+    const reviews = await Review.find({ job: { $in: jobIds }, reviewer: userId }).select("job").lean();
+    const reviewedJobIds = new Set(reviews.map(r => r.job.toString()));
+
     const countMap = new Map(
       proposalCounts.map((item) => [item._id.toString(), item.count]),
     );
@@ -371,6 +391,7 @@ export async function getHirerJobs(request, response) {
         totalApplicants: applicantCount,
         proposalsCount: applicantCount,
         acceptedProposalAmount: job.acceptedProposal?.amount || 0,
+        hasReviewed: reviewedJobIds.has(job._id.toString()),
       };
     });
 
@@ -394,6 +415,7 @@ export async function getJobApplicants(request, response) {
   try {
     const userId = request.user.id;
     const jobId = request.params.jobId;
+    console.log("getJobApplicants called for jobId:", jobId, "by user:", userId);
 
     const job = await Job.findById(jobId).lean();
     if (!job) {
@@ -452,8 +474,8 @@ export async function getJobApplicants(request, response) {
           avatar: provider.avatar || "",
           initials,
           nidVerified: !!provider.nidVerified,
-          location: provider.location || profile.district || "Bangladesh",
-          district: profile.district || provider.location || "",
+          location: provider.location?.district || provider.location?.division || profile.district || "Bangladesh",
+          district: profile.district || provider.location?.district || "",
           category: profile.category || job.category || "General",
           skills: Array.isArray(profile.skills) ? profile.skills : [],
           hourlyRate: Number(profile.hourlyRate || 0),
@@ -632,7 +654,7 @@ export async function acceptProposal(request, response) {
       type: "PROPOSAL_ACCEPTED",
       title: "Proposal Accepted",
       message: `Your proposal for "${job.title}" has been accepted. The hirer is pending payment.`,
-      link: `/provider/dashboard`,
+      link: `/provider/jobs`,
     });
     emitNotification(proposal.provider.toString(), acceptNotif);
 
@@ -648,7 +670,7 @@ export async function acceptProposal(request, response) {
           type: "PROPOSAL_REJECTED",
           title: "Proposal Rejected",
           message: `Your proposal for "${job.title}" was not selected.`,
-          link: `/provider/dashboard`,
+          link: `/provider/jobs`,
         });
         emitNotification(rp.provider.toString(), rejectNotif);
       }
@@ -725,8 +747,8 @@ export async function rejectProposal(request, response) {
       user: proposal.provider,
       type: "PROPOSAL_REJECTED",
       title: "Proposal Rejected",
-      message: `Your proposal for "${job.title}" was rejected.`,
-      link: `/provider/dashboard`,
+      message: `Your proposal for "${job.title}" has been rejected.`,
+      link: `/provider/jobs`,
     });
     emitNotification(proposal.provider.toString(), rejectNotif);
 

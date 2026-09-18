@@ -23,6 +23,7 @@ import {
   listAuditLogs,
   getPendingVerifications,
   updateAdminPermissions,
+  getFinancialReports,
 } from "../controllers/adminController.js";
 
 const router = Router();
@@ -32,6 +33,7 @@ router.use(authenticateAdmin);
 router.get("/metrics", requireAdmin, asyncHandler(getSystemStats));
 router.get("/stats", requireAdmin, asyncHandler(getSystemStats));
 router.get("/audit-logs", requireSuperAdmin, asyncHandler(listAuditLogs));
+router.get("/reports", requireAdmin, asyncHandler(getFinancialReports));
 
 // User management & NID verification queue
 router.get("/users", requireAdmin, asyncHandler(listUsers));

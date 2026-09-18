@@ -134,9 +134,9 @@ export function registerChatSocket(io) {
     );
     socket.on(
       "chat:message",
-      async ({ chatId, body }, acknowledge = () => {}) => {
+      async ({ chatId, body, type, audioUrl }, acknowledge = () => {}) => {
         try {
-          if (!body || containsContactInfo(body))
+          if (type !== "AUDIO" && (!body || containsContactInfo(body)))
             return acknowledge({ error: "Contact details cannot be shared" });
           const chat = await JobChat.findOne({
             _id: chatId,
@@ -144,9 +144,17 @@ export function registerChatSocket(io) {
           });
           if (!chat || chat.isArchived)
             return acknowledge({ error: "Chat is archived" });
+          
+          let messageBody = "";
+          if (type !== "AUDIO") {
+            messageBody = maskContactInfo(body || "");
+          }
+
           chat.messages.push({
             sender: socket.userId,
-            body: maskContactInfo(body),
+            type: type === "AUDIO" ? "AUDIO" : "TEXT",
+            body: messageBody,
+            audioUrl: type === "AUDIO" ? audioUrl : undefined,
           });
           await chat.save();
           const message = chat.messages.at(-1);

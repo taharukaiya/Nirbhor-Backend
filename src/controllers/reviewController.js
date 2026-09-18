@@ -20,10 +20,10 @@ export async function createReview(request, response) {
     }
 
     const job = await Job.findById(jobId);
-    if (!job || job.status !== "COMPLETED") {
+    if (!job || !["IN_PROGRESS", "COMPLETED"].includes(job.status)) {
       return response.status(400).json({
         success: false,
-        error: { code: "INVALID_JOB", message: "Reviews can only be submitted for completed jobs." },
+        error: { code: "INVALID_JOB", message: "Reviews can only be submitted for in-progress or completed jobs." },
       });
     }
 

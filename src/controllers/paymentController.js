@@ -30,14 +30,19 @@ export async function initiatePayment(request, response) {
   if (!proposal)
     return response.status(409).json({ error: "Accepted proposal not found" });
   const breakdown = calculateEscrowBreakdown(proposal.amount);
-  const payment = await EscrowPayment.create({
-    ...breakdown,
-    job: job.id,
-    proposal: proposal.id,
-    hirer: job.hirer,
-    provider: proposal.provider,
-    gatewayTransactionId: crypto.randomUUID(),
-  });
+  const payment = await EscrowPayment.findOneAndUpdate(
+    { job: job.id },
+    {
+      ...breakdown,
+      job: job.id,
+      proposal: proposal.id,
+      hirer: job.hirer,
+      provider: proposal.provider,
+      gatewayTransactionId: crypto.randomUUID(),
+      status: "PENDING",
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
   const gateway = await createPaymentSession({
     paymentId: payment.gatewayTransactionId,
     amount: payment.amount,
@@ -48,12 +53,40 @@ export async function initiatePayment(request, response) {
     .json({ paymentId: payment.id, gatewayPageUrl: gateway.GatewayPageURL });
 }
 
-export async function paymentIpn(request, response) {
-  const { tran_id: transactionId, val_id: validationId } = request.body;
+export async function processPaymentFulfillment(transactionId, validationId) {
+  if (transactionId && transactionId.startsWith("DEP_")) {
+    const { WalletDeposit } = await import("../models/WalletDeposit.js");
+    const deposit = await WalletDeposit.findOne({ gatewayTransactionId: transactionId });
+    if (!deposit) return false;
+    if (deposit.status === "COMPLETED") return true;
+
+    await validatePayment(validationId, deposit.amount);
+    const dbSession = await mongoose.startSession();
+    try {
+      await dbSession.withTransaction(async () => {
+        await WalletDeposit.updateOne(
+          { _id: deposit.id },
+          { $set: { status: "COMPLETED" } },
+          { session: dbSession }
+        );
+        await User.updateOne(
+          { _id: deposit.user },
+          { $inc: { walletBalance: deposit.amount } },
+          { session: dbSession }
+        );
+      });
+    } finally {
+      await dbSession.endSession();
+    }
+    return true;
+  }
+
   const payment = await EscrowPayment.findOne({
     gatewayTransactionId: transactionId,
   });
-  if (!payment) return response.status(404).send("Unknown transaction");
+  if (!payment) return false;
+  if (payment.status !== "INITIATED" && payment.status !== "PENDING") return true; // Already processed
+
   await validatePayment(validationId, payment.amount);
   const dbSession = await mongoose.startSession();
   try {
@@ -68,11 +101,28 @@ export async function paymentIpn(request, response) {
         { $set: { status: "IN_PROGRESS" } },
         { session: dbSession },
       );
+      await Proposal.updateOne(
+        { _id: payment.proposal },
+        { $set: { status: "IN_PROGRESS" } },
+        { session: dbSession },
+      );
     });
   } finally {
     await dbSession.endSession();
   }
-  response.json({ received: true });
+  return true;
+}
+
+export async function paymentIpn(request, response) {
+  try {
+    const { tran_id: transactionId, val_id: validationId } = request.body;
+    const success = await processPaymentFulfillment(transactionId, validationId);
+    if (!success) return response.status(404).send("Unknown transaction");
+    response.json({ received: true });
+  } catch (error) {
+    console.error("IPN Processing error:", error);
+    response.status(400).send(error.message || "Invalid payment");
+  }
 }
 
 export async function releasePayment(request, response) {
@@ -99,6 +149,12 @@ export async function releasePayment(request, response) {
       );
       
       if (job) {
+        await Proposal.updateOne(
+          { _id: payment.proposal },
+          { $set: { status: "COMPLETED" } },
+          { session: dbSession }
+        );
+
         // Deposit 95% into provider's wallet
         await User.updateOne(
           { _id: payment.provider },
@@ -126,54 +182,7 @@ export async function releasePayment(request, response) {
   }
 }
 
-export async function processJobPayment(request, response) {
-  const job = await Job.findOne({
-    _id: request.params.jobId,
-    hirer: request.user.id,
-    status: "PAYMENT_PENDING",
-  });
-  if (!job)
-    return response
-      .status(404)
-      .json({ error: "Payment-pending job not found" });
 
-  const proposal = await Proposal.findOne({
-    _id: job.acceptedProposal,
-    job: job.id,
-    status: "ACCEPTED",
-  });
-  if (!proposal)
-    return response.status(409).json({ error: "Accepted proposal not found" });
-
-  const breakdown = calculateEscrowBreakdown(proposal.amount);
-  const dbSession = await mongoose.startSession();
-  try {
-    await dbSession.withTransaction(async () => {
-      await EscrowPayment.create(
-        [
-          {
-            ...breakdown,
-            job: job.id,
-            proposal: proposal.id,
-            hirer: job.hirer,
-            provider: proposal.provider,
-            gatewayTransactionId: "MOCK_" + crypto.randomUUID(),
-            status: "HELD_IN_ESCROW",
-          },
-        ],
-        { session: dbSession },
-      );
-      await Job.updateOne(
-        { _id: job.id },
-        { $set: { status: "IN_PROGRESS" } },
-        { session: dbSession },
-      );
-    });
-    response.json({ message: "Mock payment successful" });
-  } finally {
-    await dbSession.endSession();
-  }
-}
 export async function payWithWallet(request, response) {
   const job = await Job.findOne({
     _id: request.params.jobId,
@@ -223,6 +232,13 @@ export async function payWithWallet(request, response) {
       // Update job status
       await Job.updateOne(
         { _id: job.id },
+        { $set: { status: "IN_PROGRESS" } },
+        { session: dbSession }
+      );
+      
+      // Update proposal status
+      await Proposal.updateOne(
+        { _id: proposal.id },
         { $set: { status: "IN_PROGRESS" } },
         { session: dbSession }
       );

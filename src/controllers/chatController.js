@@ -234,9 +234,14 @@ export async function addMessage(request, response) {
       return response.status(409).json({ error: "Chat is unavailable or archived" });
     }
 
+    const { body, message } = request.body;
+    
+    let messageBody = maskContactInfo(body || message || "");
+
     const newMessage = {
       sender: request.user.id,
-      body: maskContactInfo(request.body.body || request.body.message || ""),
+      type: "TEXT",
+      body: messageBody,
       createdAt: new Date(),
     };
 
@@ -335,4 +340,5 @@ export async function reportMessage(request, response) {
     return response.status(500).json({ success: false, error: { code: "SERVER_ERROR", message: "Failed to submit report" } });
   }
 }
+
 
