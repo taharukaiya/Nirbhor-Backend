@@ -731,13 +731,18 @@ export async function forgotPassword(request, response) {
       .trim()
       .toLowerCase(),
   });
-  if (user)
-    await sendPasswordResetEmail(
-      user.email,
-      signEmailToken(user.id, "reset-password"),
-    );
+
+  if (!user) {
+    return response.status(404).json({ error: "No account found with this email address" });
+  }
+
+  await sendPasswordResetEmail(
+    user.email,
+    signEmailToken(user.id, "reset-password"),
+  );
+
   response.json({
-    message: "If the account exists, a reset link has been sent",
+    message: "A password reset link has been sent to your email address",
   });
 }
 

@@ -134,6 +134,15 @@ export async function createJob(request, response) {
           type: String(request.body.budgetType || "FIXED").toUpperCase(),
         };
 
+  // Enforce minimum budget of BDT 300
+  const budgetMin = Number(budgetValue.min || 0);
+  if (!Number.isFinite(budgetMin) || budgetMin < 300) {
+    return response.status(400).json({
+      success: false,
+      error: { code: "BUDGET_TOO_LOW", message: "Minimum budget must be at least ৳300." },
+    });
+  }
+
   const job = await Job.create({
     hirer: request.user.id,
     hirerId: request.user.id,

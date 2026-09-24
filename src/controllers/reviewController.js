@@ -48,12 +48,13 @@ export async function createReview(request, response) {
     const role = isHirer ? "HIRER_TO_PROVIDER" : "PROVIDER_TO_HIRER";
     const revieweeId = isHirer ? acceptedProposal.provider : job.hirer;
 
-    // Check duplicate review
+    // Check duplicate review — return 409 so frontend can handle gracefully
     const existingReview = await Review.findOne({ job: jobId, reviewer: userId });
     if (existingReview) {
       return response.status(409).json({
         success: false,
         error: { code: "DUPLICATE_REVIEW", message: "You have already submitted a review for this job." },
+        review: existingReview,
       });
     }
 
@@ -68,26 +69,7 @@ export async function createReview(request, response) {
     });
 
     // Update reviewee rating statistics
-    const userReviews = await Review.find({ reviewee: revieweeId, role });
-    const totalCount = userReviews.length;
-    const avgRating = userReviews.reduce((sum, r) => sum + r.rating, 0) / totalCount;
-    const roundedAvg = Math.round(avgRating * 10) / 10;
-
-    const revieweeUser = await User.findById(revieweeId);
-    if (revieweeUser) {
-      const profile = revieweeUser.profile || {};
-      if (role === "HIRER_TO_PROVIDER") {
-        profile.providerRating = roundedAvg;
-        profile.providerReviews = totalCount;
-        profile.rating = roundedAvg;
-        profile.reviews = totalCount;
-      } else {
-        profile.hirerRating = roundedAvg;
-        profile.hirerReviews = totalCount;
-      }
-      revieweeUser.profile = profile;
-      await revieweeUser.save();
-    }
+    await _recalcRating(revieweeId, role);
 
     // Send Notification
     const reviewNotif = await Notification.create({
@@ -109,6 +91,77 @@ export async function createReview(request, response) {
     return response.status(500).json({
       success: false,
       error: { code: "REVIEW_FAILED", message: "Failed to submit review." },
+    });
+  }
+}
+
+// Helper: recalculate and save a user's aggregate rating after review create/update
+async function _recalcRating(revieweeId, role) {
+  const userReviews = await Review.find({ reviewee: revieweeId, role });
+  const totalCount = userReviews.length;
+  const avgRating = totalCount > 0
+    ? userReviews.reduce((sum, r) => sum + r.rating, 0) / totalCount
+    : 0;
+  const roundedAvg = Math.round(avgRating * 10) / 10;
+
+  const revieweeUser = await User.findById(revieweeId);
+  if (revieweeUser) {
+    const profile = revieweeUser.profile || {};
+    if (role === "HIRER_TO_PROVIDER") {
+      profile.providerRating = roundedAvg;
+      profile.providerReviews = totalCount;
+      profile.rating = roundedAvg;
+      profile.reviews = totalCount;
+    } else {
+      profile.hirerRating = roundedAvg;
+      profile.hirerReviews = totalCount;
+    }
+    revieweeUser.profile = profile;
+    revieweeUser.markModified('profile');
+    await revieweeUser.save();
+  }
+}
+
+export async function updateReview(request, response) {
+  try {
+    const { jobId } = request.params;
+    const { rating, comment, tags } = request.body;
+    const userId = request.user.id;
+
+    const numRating = Number(rating);
+    if (!Number.isFinite(numRating) || numRating < 1 || numRating > 5) {
+      return response.status(400).json({
+        success: false,
+        error: { code: "INVALID_RATING", message: "Rating must be between 1 and 5 stars." },
+      });
+    }
+
+    const existingReview = await Review.findOne({ job: jobId, reviewer: userId });
+    if (!existingReview) {
+      return response.status(404).json({
+        success: false,
+        error: { code: "NOT_FOUND", message: "No review found to update." },
+      });
+    }
+
+    existingReview.rating = numRating;
+    existingReview.comment = String(comment || "").trim();
+    existingReview.tags = Array.isArray(tags) ? tags.map((t) => String(t).trim()).filter(Boolean) : existingReview.tags;
+    await existingReview.save();
+
+    // Recalculate rating for reviewee
+    await _recalcRating(existingReview.reviewee, existingReview.role);
+
+    return response.json({
+      success: true,
+      message: "Review updated successfully",
+      review: existingReview,
+    });
+  } catch (error) {
+    console.error("updateReview error:", error);
+    return response.status(500).json({
+      success: false,
+      error: { code: "UPDATE_FAILED", message: "Failed to update review." },
     });
   }
 }
@@ -150,10 +203,15 @@ export async function getJobReviews(request, response) {
       ? reviews.some((r) => String(r.reviewer?._id || r.reviewer) === userId)
       : false;
 
+    const myReview = userId
+      ? reviews.find((r) => String(r.reviewer?._id || r.reviewer) === userId)
+      : null;
+
     return response.json({
       success: true,
       reviews,
       hasReviewed,
+      myReview: myReview || null,
     });
   } catch (error) {
     console.error("getJobReviews error:", error);
@@ -163,3 +221,4 @@ export async function getJobReviews(request, response) {
     });
   }
 }
+

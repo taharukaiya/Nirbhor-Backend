@@ -24,6 +24,9 @@ import {
   getPendingVerifications,
   updateAdminPermissions,
   getFinancialReports,
+  listJobs,
+  listMessageReports,
+  moderateMessageReport,
 } from "../controllers/adminController.js";
 
 const router = Router();
@@ -34,6 +37,7 @@ router.get("/metrics", requireAdmin, asyncHandler(getSystemStats));
 router.get("/stats", requireAdmin, asyncHandler(getSystemStats));
 router.get("/audit-logs", requireSuperAdmin, asyncHandler(listAuditLogs));
 router.get("/reports", requireAdmin, asyncHandler(getFinancialReports));
+router.get("/jobs", requireAdmin, asyncHandler(listJobs));
 
 // User management & NID verification queue
 router.get("/users", requireAdmin, asyncHandler(listUsers));
@@ -62,5 +66,9 @@ router.post("/users/:userId/promote", requireSuperAdmin, asyncHandler(promoteUse
 router.get("/categories", asyncHandler(listCategories));
 router.post("/categories", requireAdmin, asyncHandler(createCategory));
 router.delete("/categories/:id", requireAdmin, asyncHandler(deleteCategory));
+
+// Message Report Moderation
+router.get("/message-reports", requireAdmin, asyncHandler(listMessageReports));
+router.patch("/message-reports/:reportId", requireAdmin, asyncHandler(moderateMessageReport));
 
 export default router;

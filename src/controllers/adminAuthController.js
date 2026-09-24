@@ -3,7 +3,8 @@ import jwt from "jsonwebtoken";
 import { Admin } from "../models/Admin.js";
 import { config } from "../config.js";
 import { clearAdminCookies, setAdminCookies } from "../utils/cookies.js";
-import { compareToken, hashToken, issueAdminTokens } from "../utils/tokens.js";
+import { compareToken, hashToken, issueAdminTokens, signEmailToken, verifyEmailToken } from "../utils/tokens.js";
+import { sendPasswordResetEmail } from "../utils/mailer.js";
 
 const publicAdmin = (admin) => ({
   id: admin.id || admin._id?.toString(),
@@ -185,5 +186,52 @@ export async function changeAdminPassword(request, response) {
   } catch (err) {
     console.error("changeAdminPassword error:", err);
     return response.status(500).json({ error: "Failed to change password" });
+  }
+}
+
+export async function forgotPasswordAdmin(request, response) {
+  const admin = await Admin.findOne({
+    email: String(request.body.email || "")
+      .trim()
+      .toLowerCase(),
+  });
+
+  if (!admin) {
+    return response.status(404).json({ error: "No account found with this email address" });
+  }
+
+  await sendPasswordResetEmail(
+    admin.email,
+    signEmailToken(admin.id, "admin-reset-password"),
+  );
+
+  response.json({
+    message: "A password reset link has been sent to your email address",
+  });
+}
+
+export async function resetPasswordAdmin(request, response) {
+  try {
+    const payload = verifyEmailToken(request.params.token, "admin-reset-password");
+    if (!payload || !payload.userId) {
+      return response.status(400).json({ error: "Invalid reset link" });
+    }
+    
+    if (!request.body.password || String(request.body.password).length < 8) {
+      return response.status(400).json({ error: "Password must be at least 8 characters" });
+    }
+    
+    const admin = await Admin.findById(payload.userId);
+    if (!admin) {
+      return response.status(400).json({ error: "Invalid reset link" });
+    }
+    
+    admin.passwordHash = await bcrypt.hash(request.body.password, 12);
+    admin.refreshTokens = [];
+    await admin.save();
+    
+    response.json({ message: "Password reset successfully" });
+  } catch (err) {
+    response.status(400).json({ error: "Invalid reset link" });
   }
 }

@@ -8,6 +8,7 @@ import { Dispute } from "../models/Dispute.js";
 import { EscrowPayment } from "../models/EscrowPayment.js";
 import { JobChat } from "../models/JobChat.js";
 import { AuditLog } from "../models/AuditLog.js";
+import { MessageReport } from "../models/MessageReport.js";
 import { logAuditAction } from "../utils/auditLog.js";
 import { emitNotification } from "../sockets/chatSocket.js";
 
@@ -56,7 +57,7 @@ export async function listUsers(request, response) {
   }
 
   const users = await User.find(filter)
-    .select("-passwordHash -refreshTokens")
+    .select("+dateOfBirth +nidNumber -passwordHash -refreshTokens")
     .limit(limit)
     .skip(skip)
     .sort({ createdAt: -1 })
@@ -76,6 +77,57 @@ export async function listUsers(request, response) {
       },
     },
   });
+}
+
+export async function listJobs(request, response) {
+  try {
+    const page = Math.max(1, Number(request.query.page) || 1);
+    const limit = Math.min(Math.max(Number(request.query.limit) || 50, 1), 100);
+    const skip = (page - 1) * limit;
+
+    const filter = {};
+    if (request.query.status) {
+      filter.status = request.query.status;
+    }
+    if (request.query.category) {
+      filter.category = request.query.category;
+    }
+
+    const jobs = await Job.find(filter)
+      .populate("hirer", "name email avatar")
+      .populate({
+        path: "acceptedProposal",
+        populate: {
+          path: "provider",
+          select: "name email avatar"
+        }
+      })
+      .limit(limit)
+      .skip(skip)
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const total = await Job.countDocuments(filter);
+
+    return response.json({
+      success: true,
+      data: {
+        jobs,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit),
+        },
+      },
+    });
+  } catch (error) {
+    console.error("listJobs error:", error);
+    return response.status(500).json({
+      success: false,
+      error: { code: "FETCH_FAILED", message: "Failed to load jobs" },
+    });
+  }
 }
 
 export async function getSystemStats(request, response) {
@@ -700,6 +752,107 @@ export async function getFinancialReports(request, response) {
     return response.status(500).json({
       success: false,
       error: { code: "REPORT_FAILED", message: "Failed to generate financial reports" },
+    });
+  }
+}
+
+export async function listMessageReports(request, response) {
+  try {
+    const page = Math.max(1, Number(request.query.page) || 1);
+    const limit = Math.min(Math.max(Number(request.query.limit) || 50, 1), 100);
+    const skip = (page - 1) * limit;
+
+    const filter = {};
+    if (request.query.status) filter.status = request.query.status;
+
+    const reports = await MessageReport.find(filter)
+      .populate("reporterId", "name email avatar")
+      .populate("reportedUserId", "name email avatar suspended")
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .skip(skip)
+      .lean();
+
+    const total = await MessageReport.countDocuments(filter);
+    const pendingCount = await MessageReport.countDocuments({ status: "pending" });
+
+    return response.json({
+      success: true,
+      data: {
+        reports,
+        pendingCount,
+        pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+      },
+    });
+  } catch (error) {
+    console.error("listMessageReports error:", error);
+    return response.status(500).json({
+      success: false,
+      error: { code: "FETCH_FAILED", message: "Failed to retrieve message reports" },
+    });
+  }
+}
+
+export async function moderateMessageReport(request, response) {
+  try {
+    const { reportId } = request.params;
+    const { status, adminNote, suspendUser } = request.body;
+    const adminId = request.admin?._id || request.admin?.id;
+
+    const validStatuses = ["reviewed", "actioned", "dismissed"];
+    if (!validStatuses.includes(status)) {
+      return response.status(400).json({
+        success: false,
+        error: { code: "INVALID_STATUS", message: `Status must be one of: ${validStatuses.join(", ")}` },
+      });
+    }
+
+    const report = await MessageReport.findById(reportId);
+    if (!report) {
+      return response.status(404).json({
+        success: false,
+        error: { code: "NOT_FOUND", message: "Report not found" },
+      });
+    }
+
+    report.status = status;
+    report.adminNote = adminNote || "";
+    await report.save();
+
+    // Optionally suspend the reported user
+    if (suspendUser && status === "actioned") {
+      const user = await User.findById(report.reportedUserId);
+      if (user) {
+        user.suspended = true;
+        await user.save();
+        emitNotification(user.id, {
+          type: "system_alert",
+          action: "FORCE_LOGOUT",
+          title: "Account Suspended",
+          message: "Your account has been suspended due to a violation of platform policies.",
+        });
+      }
+    }
+
+    await logAuditAction({
+      adminId,
+      action: "MODERATE_MESSAGE_REPORT",
+      targetType: "MessageReport",
+      targetId: reportId,
+      details: { status, adminNote, suspendUser },
+      ipAddress: request.ip,
+    });
+
+    return response.json({
+      success: true,
+      message: `Report marked as ${status}`,
+      report,
+    });
+  } catch (error) {
+    console.error("moderateMessageReport error:", error);
+    return response.status(500).json({
+      success: false,
+      error: { code: "MODERATION_FAILED", message: "Failed to moderate message report" },
     });
   }
 }

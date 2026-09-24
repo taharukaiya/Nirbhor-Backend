@@ -13,6 +13,7 @@ const transporter = process.env.SMTP_HOST
 export async function sendVerificationEmail(email, token) {
   if (!transporter) {
     if (config.isProduction) throw new Error("SMTP is not configured");
+    console.log(`[DEV MODE] Verification Email sent to ${email}. Link: ${config.frontendOrigin}/verify-email/${token}`);
     return;
   }
   await transporter.sendMail({
@@ -26,6 +27,7 @@ export async function sendVerificationEmail(email, token) {
 export async function sendPasswordResetEmail(email, token) {
   if (!transporter) {
     if (config.isProduction) throw new Error("SMTP is not configured");
+    console.log(`[DEV MODE] Password Reset Email sent to ${email}. Link: ${config.frontendOrigin}/reset-password/${token}`);
     return;
   }
   await transporter.sendMail({
