@@ -188,10 +188,12 @@ export function registerChatSocket(io) {
           });
           await chat.save();
           const message = chat.messages.at(-1);
+          const messageObj = message.toObject();
+          messageObj.chatId = chat.id || chat._id;
           
           // Broadcast message to everyone in the chat room (including sender to confirm receipt)
-          io.to(`chat:${chat.id}`).emit("chat:message", message);
-          acknowledge({ message });
+          io.to(`chat:${chat.id}`).emit("chat:message", messageObj);
+          acknowledge({ message: messageObj });
         } catch {
           acknowledge({ error: "Unable to send message" });
         }

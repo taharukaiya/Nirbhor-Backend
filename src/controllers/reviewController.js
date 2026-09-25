@@ -129,9 +129,11 @@ async function _recalcRating(revieweeId, role) {
       profile.hirerRating = roundedAvg;
       profile.hirerReviews = totalCount;
     }
-    revieweeUser.profile = profile;
-    revieweeUser.markModified('profile');
-    await revieweeUser.save();
+    
+    await User.updateOne(
+      { _id: revieweeId },
+      { $set: { profile: profile } }
+    );
   }
 }
 

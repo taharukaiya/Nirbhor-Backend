@@ -13,6 +13,7 @@
  */
 import { EscrowPayment } from "../models/EscrowPayment.js";
 import { WalletDeposit } from "../models/WalletDeposit.js";
+import { Withdrawal } from "../models/Withdrawal.js";
 
 // Utility to normalize transactions for the dashboard
 function normalizeTransaction(txn, type) {
@@ -28,6 +29,18 @@ function normalizeTransaction(txn, type) {
       provider: txn.provider,
       job: txn.job,
       platformFee: txn.platformFee,
+    };
+  }
+  if (type === "WITHDRAWAL") {
+    return {
+      id: txn._id,
+      date: txn.createdAt,
+      type: "WITHDRAWAL",
+      amount: txn.amount,
+      status: txn.status,
+      method: txn.method,
+      user: txn.provider,
+      gatewayTransactionId: txn._id,
     };
   }
   return {
@@ -48,6 +61,7 @@ export async function getUserTransactions(request, response) {
 
     const escrowQuery = { $or: [{ hirer: userId }, { provider: userId }] };
     const depositQuery = { user: userId };
+    const withdrawalQuery = { provider: userId };
 
     if (startDate || endDate) {
       const dateFilter = {};
@@ -55,11 +69,13 @@ export async function getUserTransactions(request, response) {
       if (endDate) dateFilter.$lte = new Date(endDate);
       escrowQuery.createdAt = dateFilter;
       depositQuery.createdAt = dateFilter;
+      withdrawalQuery.createdAt = dateFilter;
     }
 
     if (status) {
       escrowQuery.status = status;
       depositQuery.status = status;
+      withdrawalQuery.status = status;
     }
 
     let results = [];
@@ -76,9 +92,18 @@ export async function getUserTransactions(request, response) {
 
     if (!type || type === "DEPOSIT") {
       const deposits = await WalletDeposit.find(depositQuery)
+        .populate("user", "name email")
         .sort({ createdAt: -1 })
         .lean();
       results = results.concat(deposits.map((d) => normalizeTransaction(d, "DEPOSIT")));
+    }
+
+    if (!type || type === "WITHDRAWAL") {
+      const withdrawals = await Withdrawal.find(withdrawalQuery)
+        .populate("provider", "name email")
+        .sort({ createdAt: -1 })
+        .lean();
+      results = results.concat(withdrawals.map((w) => normalizeTransaction(w, "WITHDRAWAL")));
     }
 
     results.sort((a, b) => b.date - a.date);
@@ -96,6 +121,7 @@ export async function getAdminTransactions(request, response) {
 
     const escrowQuery = {};
     const depositQuery = {};
+    const withdrawalQuery = {};
 
     if (startDate || endDate) {
       const dateFilter = {};
@@ -103,11 +129,13 @@ export async function getAdminTransactions(request, response) {
       if (endDate) dateFilter.$lte = new Date(endDate);
       escrowQuery.createdAt = dateFilter;
       depositQuery.createdAt = dateFilter;
+      withdrawalQuery.createdAt = dateFilter;
     }
 
     if (status) {
       escrowQuery.status = status;
       depositQuery.status = status;
+      withdrawalQuery.status = status;
     }
 
     let results = [];
@@ -130,6 +158,15 @@ export async function getAdminTransactions(request, response) {
         .limit(1000)
         .lean();
       results = results.concat(deposits.map((d) => normalizeTransaction(d, "DEPOSIT")));
+    }
+
+    if (!type || type === "WITHDRAWAL") {
+      const withdrawals = await Withdrawal.find(withdrawalQuery)
+        .populate("provider", "name email")
+        .sort({ createdAt: -1 })
+        .limit(1000)
+        .lean();
+      results = results.concat(withdrawals.map((w) => normalizeTransaction(w, "WITHDRAWAL")));
     }
 
     results.sort((a, b) => b.date - a.date);
