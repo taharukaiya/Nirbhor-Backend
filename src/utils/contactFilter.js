@@ -25,7 +25,7 @@ const CONTACT_PATTERNS = [
   // Mobile wallet patterns (bKash, Nagad, Rocket) — number sequences with wallet keywords
   /(?:bkash|nagad|rocket|upay|wallet)\s*(?:number|no|:)?\s*[\d\s\-]+/i,
   // Bank account / IBAN-style patterns
-  /(?:account|acc|iban)\s*(?:no|number|:)?\s*[\dA-Z\s\-]{8,}/i,
+  /\b(?:account|acc|iban)\b\s*(?:no|number|:)?\s*(?=(?:[A-Za-z\s\-]*\d){4})[A-Za-z0-9\s\-]{8,}/i,
   // Credit/debit card patterns (16 digits grouped)
   /\b\d{4}[\s\-]?\d{4}[\s\-]?\d{4}[\s\-]?\d{4}\b/,
 ];

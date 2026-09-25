@@ -87,7 +87,7 @@ export async function createReview(request, response) {
     // Send Notification
     const reviewNotif = await Notification.create({
       user: revieweeId,
-      type: "REVIEW_RECEIVED",
+      type: "new_review",
       title: "New Review Received",
       message: `You received a ${numRating}-star review for "${job.title}".`,
       link: `/profile`
