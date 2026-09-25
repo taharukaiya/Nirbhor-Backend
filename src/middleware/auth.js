@@ -1,3 +1,19 @@
+/**
+ * Authentication Middleware
+ * 
+ * Architectural Intent:
+ * Secures the application by implementing stateless Access Token verification 
+ * with a stateful Refresh Token fallback mechanism.
+ * 
+ * Flow:
+ * 1. Checks `access_token` cookie or `Authorization: Bearer` header.
+ * 2. If valid, attaches user/admin to `request` and proceeds.
+ * 3. If expired, catches the error and immediately attempts to rotate the session 
+ *    using the `refresh_token`.
+ * 4. Checks the DB for the hashed refresh token. If valid, issues a new token pair, 
+ *    updates the cookies automatically, and allows the request to proceed seamlessly.
+ *    (This prevents the frontend from having to handle token rotation).
+ */
 import jwt from "jsonwebtoken";
 import { User } from "../models/User.js";
 import { Admin } from "../models/Admin.js";

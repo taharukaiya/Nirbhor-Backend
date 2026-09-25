@@ -1,3 +1,11 @@
+/**
+ * Dispute Model
+ * 
+ * Architectural Intent:
+ * Acts as the official record when a Hirer or Provider raises an issue regarding a job.
+ * Escrow payments are locked and cannot be released while a Dispute linked to a job is OPEN or INVESTIGATING.
+ * Only Admins with `canHandleDisputes` permission can mutate the status to RESOLVED.
+ */
 import mongoose from "mongoose";
 
 const disputeSchema = new mongoose.Schema(
@@ -27,11 +35,13 @@ const disputeSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    // State machine for arbitration lifecycle
     status: {
       type: String,
       enum: ["OPEN", "INVESTIGATING", "RESOLVED", "CLOSED"],
       default: "OPEN",
     },
+    // The final verdict written by the Admin arbitrator
     resolution: {
       type: String,
       trim: true,

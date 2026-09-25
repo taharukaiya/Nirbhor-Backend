@@ -1,3 +1,11 @@
+/**
+ * Review & Rating Routes
+ * 
+ * Architectural Intent:
+ * Handles the creation and retrieval of feedback between users. Reviews form the backbone 
+ * of the platform's trust mechanism and compute aggregated rating scores attached to 
+ * Service Providers and Hirers.
+ */
 import { Router } from "express";
 import { authenticate } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/errorHandler.js";

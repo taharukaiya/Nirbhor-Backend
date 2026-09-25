@@ -1,3 +1,16 @@
+/**
+ * Job & Proposal Lifecycle Controller
+ * 
+ * Architectural Intent:
+ * Core orchestrator for the marketplace. Manages the transition of a Job from 
+ * OPEN -> PAYMENT_PENDING -> IN_PROGRESS -> COMPLETED, alongside the associated 
+ * Proposals (PENDING -> ACCEPTED / REJECTED -> IN_PROGRESS -> COMPLETED).
+ * 
+ * Features:
+ * - Dynamic aggregation of applicant counts.
+ * - Enforces minimum budget logic to maintain marketplace quality.
+ * - Atomic state transitions using MongoDB sessions when accepting proposals.
+ */
 import mongoose from "mongoose";
 import { Job } from "../models/Job.js";
 import { Proposal } from "../models/Proposal.js";

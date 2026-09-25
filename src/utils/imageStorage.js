@@ -1,3 +1,15 @@
+/**
+ * Disk Storage Utility
+ * 
+ * Architectural Intent:
+ * Provides local disk storage for user avatars and chat audio blobs.
+ * While production deployments (e.g., AWS, GCP) would typically use S3/GCS buckets, 
+ * this local implementation keeps the MVP/Practicum project self-contained.
+ * 
+ * Security:
+ * Uses cryptographic random bytes to generate unpredictable filenames, preventing 
+ * users from enumerating/scraping other users' files.
+ */
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";

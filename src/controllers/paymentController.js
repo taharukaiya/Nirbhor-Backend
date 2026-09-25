@@ -1,3 +1,15 @@
+/**
+ * Escrow & Payment Controller
+ * 
+ * Architectural Intent:
+ * Manages financial transactions, wallet deposits, and job escrow holding.
+ * 
+ * Logic:
+ * - `initiatePayment`: Interfaces with `PaymentService` to generate a gateway URL.
+ * - `paymentIpn`: Secure webhook listener for the payment gateway.
+ * - `releasePayment`: Safely moves funds from Escrow into the Provider's wallet 
+ *   using an atomic MongoDB transaction.
+ */
 import crypto from "node:crypto";
 import mongoose from "mongoose";
 import { Job } from "../models/Job.js";

@@ -1,3 +1,10 @@
+/**
+ * Authorization Utility Exporter
+ * 
+ * Architectural Intent:
+ * Provides a unified import boundary for auth helpers and a specific `authorizeRoles` 
+ * factory for route-level role assertions.
+ */
 export {
   authenticate,
   authenticateAdmin,

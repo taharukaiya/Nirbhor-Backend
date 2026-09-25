@@ -1,3 +1,11 @@
+/**
+ * Payment & Escrow Routes
+ * 
+ * Architectural Intent:
+ * Interfaces directly with the SSLCommerz payment gateway. Manages the lifecycle of Escrow 
+ * payments: initialization, handling asynchronous IPN webhooks (Instant Payment Notifications), 
+ * managing wallet balance payments, and triggering job status changes upon successful funding.
+ */
 import { Router } from "express";
 import { authenticate, requireVerifiedNID } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/errorHandler.js";

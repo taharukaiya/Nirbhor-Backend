@@ -1,3 +1,15 @@
+/**
+ * Admin API Controller
+ * 
+ * Architectural Intent:
+ * Acts as the control plane for the entire platform. Handles sensitive back-office 
+ * operations including user moderation, category management, dispute resolution, 
+ * and financial auditing. 
+ * 
+ * Logic:
+ * Security constraints (like verifying the caller is a SUPER_ADMIN before promoting 
+ * another admin) are tightly coupled with the DB state changes here.
+ */
 import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
 import { Admin } from "../models/Admin.js";

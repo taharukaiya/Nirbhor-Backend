@@ -1,4 +1,19 @@
+/**
+ * Service Discovery & Search Controller
+ * 
+ * Architectural Intent:
+ * Provides the public-facing API for searching and listing available 
+ * Service Providers in the marketplace.
+ * 
+ * Features:
+ * - Implements a flexible MongoDB `$or` regex search for matching queries 
+ *   against names, categories, skills, bios, and locations.
+ * - Standardizes the output DTO using `toProviderShape` so the frontend 
+ *   always receives a predictable, normalized object regardless of the 
+ *   underlying database schema variations.
+ */
 import { User } from "../models/User.js";
+
 
 const toProviderShape = (provider) => ({
   id: provider._id.toString(),

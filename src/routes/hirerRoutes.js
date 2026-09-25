@@ -1,3 +1,11 @@
+/**
+ * Hirer Domain Routes
+ * 
+ * Architectural Intent:
+ * Segregates Hirer-specific profiles and configurations from the main user endpoints.
+ * This ensures that when a dual-mode User (who can be both Hirer and Provider) acts 
+ * in the context of hiring, their specific details are appropriately scoped and isolated.
+ */
 import { Router } from "express";
 import { authenticate } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/errorHandler.js";

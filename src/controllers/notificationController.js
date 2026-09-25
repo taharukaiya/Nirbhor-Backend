@@ -1,4 +1,12 @@
+/**
+ * Notification Controller
+ * 
+ * Architectural Intent:
+ * Handles retrieval and read-state management of persistent notifications.
+ * Works in tandem with `chatSocket.js` which handles the real-time push delivery.
+ */
 import { Notification } from "../models/Notification.js";
+
 
 export async function getNotifications(request, response) {
   try {

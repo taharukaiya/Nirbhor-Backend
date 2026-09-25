@@ -1,3 +1,15 @@
+/**
+ * Mailer Utility
+ * 
+ * Architectural Intent:
+ * Abstract wrapper for `nodemailer` that supports graceful degradation.
+ * If SMTP credentials are not provided (e.g., local development), it fails over 
+ * to logging the links to the console, allowing developers to test auth flows 
+ * without needing an active Mailgun/SendGrid account.
+ * 
+ * Note:
+ * Throws errors in `isProduction` mode if SMTP is missing, serving as a fail-safe.
+ */
 import nodemailer from "nodemailer";
 import { config } from "../config.js";
 

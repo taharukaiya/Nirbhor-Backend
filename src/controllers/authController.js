@@ -1,3 +1,15 @@
+/**
+ * End-User Authentication Controller
+ * 
+ * Architectural Intent:
+ * Controls the primary access gate for the platform. Manages registration, 
+ * secure token distribution, profile mutation, and NID (KYC) onboarding.
+ * 
+ * Key Constraints:
+ * - Registration is atomic; if NID verification fails, the account is not created.
+ * - Enforces the dual-persona design (`availableModes`) where a single account 
+ *   can swap between being a HIRER and a SERVICE_PROVIDER.
+ */
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { User } from "../models/User.js";

@@ -1,3 +1,11 @@
+/**
+ * Real-Time Chat HTTP Fallback & Metadata Routes
+ * 
+ * Architectural Intent:
+ * While actual messages are transported via Socket.IO for real-time delivery, these HTTP 
+ * endpoints serve as the RESTful interface for fetching chat history, initiating new chat 
+ * instances, and marking rooms as read.
+ */
 import { Router } from "express";
 import { authenticate } from "../middleware/auth.js";
 import { chatGuard } from "../middleware/chatGuard.js";

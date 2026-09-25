@@ -1,3 +1,11 @@
+/**
+ * Job Management Routes
+ * 
+ * Architectural Intent:
+ * Defines the endpoints for creating, retrieving, and managing jobs (tasks) on the platform.
+ * Integrates input validation (express-validator) to ensure budget boundaries and guards 
+ * endpoints with `authenticate` and `requireVerifiedNID` for trust and safety constraints.
+ */
 import { Router } from "express";
 import { authenticate, requireVerifiedNID } from "../middleware/auth.js";
 import { body } from "express-validator";

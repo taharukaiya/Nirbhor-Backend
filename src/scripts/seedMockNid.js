@@ -1,3 +1,14 @@
+/**
+ * Database Seed Script for Mock NIDs
+ * 
+ * Architectural Intent:
+ * This script populates the `MockNID` collection with dummy data. Since this application 
+ * does not connect to the real Bangladesh National ID database for verification, we simulate 
+ * it by querying against this localized, pre-seeded collection during the KYC process.
+ * 
+ * Usage:
+ * Run this directly via `node src/scripts/seedMockNid.js` to reset and seed the mock collection.
+ */
 import "dotenv/config";
 import mongoose from "mongoose";
 import { connectDatabase } from "../config/db.js";

@@ -1,3 +1,11 @@
+/**
+ * Number Utility
+ * 
+ * Architectural Intent:
+ * A defensive parsing function to ensure fiat money values (BDT) coming from 
+ * client payloads or external gateways (SSLCommerz) are safely coerced into Numbers.
+ * Mitigates edge cases where commas or unexpected string types break math operations.
+ */
 export function parseAmount(value) {
   if (value === null || value === undefined) return 0;
   if (typeof value === "number") return isNaN(value) ? 0 : value;

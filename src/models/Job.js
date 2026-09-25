@@ -1,3 +1,17 @@
+/**
+ * Job Model
+ * 
+ * Architectural Intent & Business Logic:
+ * Represents the core entity of the platform: a task posted by a Hirer.
+ * 
+ * Lifecycle (Status):
+ * 1. OPEN: Job is posted, accepting Proposals.
+ * 2. PAYMENT_PENDING: Hirer accepted a proposal, waiting for Escrow deposit via payment gateway.
+ * 3. IN_PROGRESS: Escrow funded. Provider is working.
+ * 4. COMPLETED: Hirer confirmed work. Escrow released to Provider (minus commission).
+ * 5. CANCELLED: Terminated before completion.
+ * 6. DISPUTED: Frozen by a Dispute. Awaiting Admin arbitration.
+ */
 import mongoose from "mongoose";
 
 const jobSchema = new mongoose.Schema(
@@ -8,6 +22,7 @@ const jobSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    // Duplicate of `hirer` used in some legacy aggregation pipelines.
     hirerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -52,6 +67,7 @@ const jobSchema = new mongoose.Schema(
       default: "OPEN",
       index: true,
     },
+    // Link to the winning bid. Null until a proposal is accepted.
     acceptedProposal: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Proposal",
@@ -61,13 +77,18 @@ const jobSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+// Compound index for the primary job feed filter queries (Status + Location + Category)
 jobSchema.index({
   status: 1,
   "location.district": 1,
   category: 1,
   createdAt: -1,
 });
+
+// Text index for keyword searching in the job feed
 jobSchema.index({ title: "text", description: "text", skills: "text" });
+
+// Pre-validation hook to ensure business logic constraints
 jobSchema.pre("validate", function validateBudget(next) {
   if (this.budget?.max < this.budget?.min)
     this.invalidate(

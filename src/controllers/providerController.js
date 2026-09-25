@@ -1,3 +1,14 @@
+/**
+ * Provider-Specific Operations Controller
+ * 
+ * Architectural Intent:
+ * Manages data fetching specific to the Service Provider persona.
+ * Used primarily to populate the Provider dashboard and proposal tracking views.
+ * 
+ * Logic:
+ * - Aggregates Proposal states to calculate dashboard metrics.
+ * - Enforces role-based access to ensure only Providers can view this data.
+ */
 import { Proposal } from "../models/Proposal.js";
 import { Review } from "../models/Review.js";
 

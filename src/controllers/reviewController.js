@@ -1,3 +1,16 @@
+/**
+ * Review & Reputation Controller
+ * 
+ * Architectural Intent:
+ * Manages the double-blind review system between Hirers and Providers.
+ * Reviews can only be submitted once a job is IN_PROGRESS or COMPLETED.
+ * 
+ * Flow & Integrity:
+ * 1. Checks job state and participant validity.
+ * 2. Prevents duplicate reviews via a unique index check (409 Conflict).
+ * 3. Triggers `_recalcRating` to aggregate and denormalize the new average 
+ *    rating directly onto the User's profile for fast read access.
+ */
 import { Job } from "../models/Job.js";
 import { Proposal } from "../models/Proposal.js";
 import { User } from "../models/User.js";

@@ -1,3 +1,15 @@
+/**
+ * Dispute Management Controller
+ * 
+ * Architectural Intent:
+ * Provides the API surface for managing the job dispute lifecycle. 
+ * Allows users (Hirer or Provider) to escalate a job that is IN_PROGRESS.
+ * 
+ * Flow:
+ * 1. User reports an issue -> status becomes OPEN.
+ * 2. Admin reviews -> Admin can refund the Hirer or pay the Provider.
+ * 3. State changes cascade to the Job and the EscrowPayment models.
+ */
 import { Dispute } from "../models/Dispute.js";
 import { Job } from "../models/Job.js";
 import { Notification } from "../models/Notification.js";

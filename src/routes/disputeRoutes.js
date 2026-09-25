@@ -1,3 +1,11 @@
+/**
+ * Dispute Resolution Routes
+ * 
+ * Architectural Intent:
+ * Exposes endpoints for end-users to raise a Dispute if an active Escrow contract goes wrong.
+ * Integrates image uploads (evidence) seamlessly via `express-fileupload` and routes 
+ * requests to the `disputeController`.
+ */
 import { Router } from "express";
 import { authenticate } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/errorHandler.js";

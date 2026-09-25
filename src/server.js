@@ -1,3 +1,17 @@
+/**
+ * Application Entry Point (Server Core)
+ * 
+ * Architectural Intent:
+ * The backbone of the Nirbhor Backend. Bootstraps the Express application, configures 
+ * core middleware (CORS, Helmet, Body Parsers, Rate Limiters), wires up all domain routes, 
+ * establishes the database connection, and mounts the Socket.IO real-time server.
+ * 
+ * Reliability & Resilience:
+ * - Implements graceful shutdown (`SIGTERM`, `SIGINT`) to close HTTP and DB connections safely.
+ * - Global Uncaught Exception and Unhandled Rejection handlers to prevent silent crashes.
+ * - Centralized Error Handler (`errorHandler.js`) mounted as the final middleware.
+ * - `dbHealthCheck` middleware blocks incoming API requests with a 503 if the DB is down.
+ */
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";

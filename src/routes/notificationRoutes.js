@@ -1,3 +1,10 @@
+/**
+ * Notification Routes
+ * 
+ * Architectural Intent:
+ * Provides CRUD and read-state endpoints for user-facing system notifications.
+ * Acts as the persistence layer complement to real-time notification sockets.
+ */
 import { Router } from "express";
 import { authenticate } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/errorHandler.js";

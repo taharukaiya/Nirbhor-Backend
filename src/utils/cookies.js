@@ -1,3 +1,14 @@
+/**
+ * Cookie Management Utility
+ * 
+ * Architectural Intent:
+ * Abstracts the `express` Response cookie API to ensure consistent application 
+ * of `COOKIE_OPTIONS` (HttpOnly, Secure, SameSite) across all authentication routes.
+ * 
+ * Logic:
+ * Splits User cookies from Admin cookies to allow a developer/admin to be logged in 
+ * to both the public portal and the admin dashboard simultaneously in the same browser.
+ */
 import { COOKIE_OPTIONS } from "./tokens.js";
 
 export function setUserCookies(response, accessToken, refreshToken) {

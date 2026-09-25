@@ -1,3 +1,18 @@
+/**
+ * Chat WebSockets Manager
+ * 
+ * Architectural Intent:
+ * Provides real-time bidirectional communication using Socket.io. 
+ * Manages the lifecycle of real-time chat rooms, typing indicators, and read receipts.
+ * 
+ * Security:
+ * 1. Custom Middleware: Extracts the JWT from the `access_token` cookie for authentication 
+ *    since WebSockets do not easily pass standard HTTP Authorization headers.
+ * 2. Room Isolation: Users join a private room `user:<userId>` to receive targeted system 
+ *    notifications, and `chat:<chatId>` to receive messages.
+ * 3. Trust & Safety: Messages are piped through `maskContactInfo` in `contactFilter.js` 
+ *    before being saved or broadcast, preventing platform circumvention.
+ */
 import jwt from "jsonwebtoken";
 import { config } from "../config.js";
 import { Job } from "../models/Job.js";
@@ -12,6 +27,8 @@ let ioInstance = null;
 
 export function registerChatSocket(io) {
   ioInstance = io;
+  
+  // Socket.io Authentication Middleware
   io.use((socket, next) => {
     try {
       const payload = jwt.verify(
@@ -31,8 +48,11 @@ export function registerChatSocket(io) {
       next(new Error("Unauthorized"));
     }
   });
+
   io.on("connection", (socket) => {
+    // Join a private room for user-specific system notifications
     socket.join(`user:${socket.userId}`);
+    
     socket.on("disconnect", (reason) =>
       console.log(
         JSON.stringify({
@@ -42,6 +62,7 @@ export function registerChatSocket(io) {
         }),
       ),
     );
+
     socket.on(
       "chat:typing",
       async ({ chatId, isTyping }, acknowledge = () => {}) => {
@@ -53,6 +74,8 @@ export function registerChatSocket(io) {
             }))
           )
             return acknowledge({ error: "Unauthorized chat" });
+          
+          // Broadcast typing event to everyone in the room EXCEPT the sender
           socket
             .to(`chat:${chatId}`)
             .emit("chat:typing", {
@@ -65,6 +88,7 @@ export function registerChatSocket(io) {
         }
       },
     );
+
     socket.on("chat:read", async ({ chatId }, acknowledge = () => {}) => {
       try {
         const chat = await JobChat.findOne({
@@ -86,6 +110,7 @@ export function registerChatSocket(io) {
         acknowledge({ error: "Unable to mark chat read" });
       }
     });
+
     socket.on(
       "chat:join",
       async ({ chatId, jobId, proposalId, targetUserId }, acknowledge = () => {}) => {
@@ -98,6 +123,7 @@ export function registerChatSocket(io) {
               participants: socket.userId,
             });
           } else if (jobId && proposalId) {
+            // Contextual Job-Proposal Chat initiation
             chat = await JobChat.findOne({ job: jobId, proposal: proposalId });
             if (!chat) {
               const proposal = await Proposal.findOne({ _id: proposalId, job: jobId }).lean();
@@ -111,6 +137,7 @@ export function registerChatSocket(io) {
               }
             }
           } else if (targetUserId) {
+            // Generic direct message initiation
             chat = await JobChat.findOne({ participants: { $all: [socket.userId, targetUserId] } });
             if (!chat) {
               chat = await JobChat.create({
@@ -132,12 +159,15 @@ export function registerChatSocket(io) {
         }
       },
     );
+
     socket.on(
       "chat:message",
       async ({ chatId, body, type, audioUrl }, acknowledge = () => {}) => {
         try {
+          // Trust & Safety Constraint: Prevent sending phone numbers / emails directly
           if (type !== "AUDIO" && (!body || containsContactInfo(body)))
             return acknowledge({ error: "Contact details cannot be shared" });
+          
           const chat = await JobChat.findOne({
             _id: chatId,
             participants: socket.userId,
@@ -158,6 +188,8 @@ export function registerChatSocket(io) {
           });
           await chat.save();
           const message = chat.messages.at(-1);
+          
+          // Broadcast message to everyone in the chat room (including sender to confirm receipt)
           io.to(`chat:${chat.id}`).emit("chat:message", message);
           acknowledge({ message });
         } catch {
@@ -168,6 +200,9 @@ export function registerChatSocket(io) {
   });
 }
 
+/**
+ * Helper to emit system-wide notifications to a specific user regardless of what room they are in.
+ */
 export function emitNotification(userId, notification) {
   if (ioInstance) {
     ioInstance.to(`user:${userId}`).emit("notification:new", notification);

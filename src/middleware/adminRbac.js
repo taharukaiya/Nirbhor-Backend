@@ -1,6 +1,13 @@
 /**
- * RBAC middleware for admin route protection.
- * Checks if the authenticated admin has required permissions.
+ * Admin RBAC (Role-Based Access Control) Middleware
+ * 
+ * Architectural Intent:
+ * Provides a granular, boolean-based permissions matrix for the Admin Dashboard. 
+ * Allows scaling the admin team without giving junior moderators full system control.
+ * 
+ * Logic:
+ * `requireAdminRole`: Enforces hierarchy (SUPER_ADMIN > ADMIN).
+ * `requirePermission`: Enforces horizontal limits (e.g., can moderate users, but cannot approve payouts).
  */
 
 export function requireAdminRole(requiredRole = "ADMIN") {

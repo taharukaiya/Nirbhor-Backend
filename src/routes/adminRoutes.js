@@ -1,3 +1,12 @@
+/**
+ * Admin Panel Routes
+ * 
+ * Architectural Intent:
+ * Maps HTTP routes for the back-office administration panel. Enforces stringent RBAC 
+ * by chaining `authenticateAdmin`, `requireAdmin`, and `requireSuperAdmin` middlewares 
+ * to ensure users cannot escalate privileges or access sensitive system metrics, moderation tools, 
+ * and financial reports.
+ */
 import { Router } from "express";
 import {
   authenticateAdmin,

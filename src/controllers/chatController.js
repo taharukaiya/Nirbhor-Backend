@@ -1,3 +1,11 @@
+/**
+ * Chat System Controller
+ * 
+ * Architectural Intent:
+ * Manages peer-to-peer real-time communication context between a Hirer and a Provider.
+ * Integrates directly with the `JobChat` data model and uses the `contactFilter` utility 
+ * as a passive middleware to sanitize outgoing payloads before saving to DB.
+ */
 import { Job } from "../models/Job.js";
 import { Proposal } from "../models/Proposal.js";
 import { JobChat } from "../models/JobChat.js";

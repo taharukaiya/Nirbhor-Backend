@@ -1,3 +1,15 @@
+/**
+ * NID Verification Service
+ * 
+ * Architectural Intent:
+ * Provides a mock implementation of the National Identity (NID) verification pipeline. 
+ * In a production environment, this service would integrate with the official Bangladesh 
+ * Election Commission API or a licensed 3rd party KYC provider (e.g., Porichoy).
+ * 
+ * Logic:
+ * Checks the submitted NID, DOB, and Name against the `MockNID` collection.
+ * Uses exact match logic with basic normalization (trim, lowercase).
+ */
 import { MockNID } from "../models/MockNID.js";
 
 export async function verifyNID({ nidNumber, dateOfBirth, name }) {

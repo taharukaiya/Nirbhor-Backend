@@ -1,3 +1,11 @@
+/**
+ * Authentication Routes
+ * 
+ * Architectural Intent:
+ * Maps HTTP routes for user registration, login, token rotation, and profile management
+ * to their respective controller methods. Integrates express-validator for robust
+ * request sanitization before passing execution to the controller layer.
+ */
 import { Router } from "express";
 import { authenticate, optionalAuthenticate } from "../middleware/auth.js";
 import { body } from "express-validator";

@@ -1,3 +1,15 @@
+/**
+ * Virtual Wallet Controller
+ * 
+ * Architectural Intent:
+ * Manages the user's internal wallet balance, aggregating deposits, 
+ * withdrawals, and escrow transfers into a unified ledger.
+ * 
+ * Integrity:
+ * - `requestWithdrawal`: Uses MongoDB Sessions and Transactions to safely 
+ *   deduct the user's wallet balance and create a Withdrawal record atomically, 
+ *   preventing race conditions or negative balances.
+ */
 import { User } from "../models/User.js";
 import { EscrowPayment } from "../models/EscrowPayment.js";
 import { WalletDeposit } from "../models/WalletDeposit.js";

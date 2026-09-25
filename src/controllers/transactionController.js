@@ -1,3 +1,16 @@
+/**
+ * Transaction Ledger & Analytics Controller
+ * 
+ * Architectural Intent:
+ * Aggregates financial data across different models (EscrowPayment, WalletDeposit) 
+ * to present a unified transaction history to users and admins.
+ * 
+ * Logic:
+ * - `normalizeTransaction`: An adapter function that normalizes disparate 
+ *   Mongoose documents into a standard shape for the frontend table view.
+ * - `getAdminAnalytics`: Uses MongoDB Aggregation Framework to group escrow 
+ *   volume and platform revenue by day, feeding the Admin dashboard charts.
+ */
 import { EscrowPayment } from "../models/EscrowPayment.js";
 import { WalletDeposit } from "../models/WalletDeposit.js";
 

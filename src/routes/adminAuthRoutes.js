@@ -1,3 +1,11 @@
+/**
+ * Admin Authentication Routes
+ * 
+ * Architectural Intent:
+ * Dedicated authentication endpoints strictly for the back-office Admin panel.
+ * Isolated from the standard end-user `authRoutes.js` to ensure logical segregation 
+ * of privileged access workflows and separate token management.
+ */
 import { Router } from "express";
 import { adminLoginLimiter } from "../middleware/rateLimiters.js";
 import {

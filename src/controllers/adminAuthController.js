@@ -1,3 +1,11 @@
+/**
+ * Admin Authentication Controller
+ * 
+ * Architectural Intent:
+ * Manages the lifecycle of administrative sessions independently of user sessions.
+ * Implements JWT-based dual-token auth (Access + Refresh) stored securely in HTTP-only cookies.
+ * Contains logic for robust session recovery and secure password management.
+ */
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { Admin } from "../models/Admin.js";
